@@ -1,10 +1,19 @@
-# Nestjs Boilerplate
+# Nestjs Jira TG bot
 
 ## RU
-Nest.js бэкенд, в котором уже настроены firestore, google cloud storage и показан пример работы и организации модуля для сущности Example, включающей в себя список, флаг публикации и урл изображения. Этот бойлерплейт предназначен для быстрого старта рабочего окружения. На данный момент здесь нет примера CI/CD, и авторизации с Firebase. Эти возможности появятся позже и будут описаны в отдельных статьях.
+Nest.js телеграм бот, для отправки сообщений и картинок задачами в Jira
 
 ## EN
-This is a nest js boilerplate with firestore, gcloud connections and example module for fast creation MVP or PET projects.
+
+
+### Development
+Для корректно работы, локальной, проект запускается командой:
+```bash
+pnpm run start:dev
+```
+
+Для деплоя на сервер понадобится настроить Action/Secrets в Github.
+Конретно используемые аргументы из env окружения сборки описаны в файле github/workflows/production-deploy.yaml
 
 ____
 

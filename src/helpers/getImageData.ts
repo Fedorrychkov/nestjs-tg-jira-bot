@@ -15,7 +15,7 @@ export const getImageFile = async (url: URL) => {
   const filePathSplitted = url.pathname?.split('/')
   const fileName = filePathSplitted[filePathSplitted.length - 1]
 
-  const file = new File([buffer], fileName, { type: contentType })
+  const file = new File([buffer], fileName, { type: 'image/jpeg' })
 
   try {
     await fs.access(`${process.cwd()}/uploads`)
@@ -29,5 +29,8 @@ export const getImageFile = async (url: URL) => {
   return {
     file,
     filePath,
+    buffer,
+    fileName,
+    contentType,
   }
 }

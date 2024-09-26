@@ -1,27 +1,29 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import * as fs from 'fs'
+import { exec } from 'child_process'
 import NodeJsVersion3Client, { Version3Client } from 'jira-rest-sdk'
 
 @Injectable()
 export class JiraService {
   private jira: NodeJsVersion3Client
   private baseURL: string
+  private apiToken: string
+  private email: string
 
   constructor(
     @Inject(ConfigService)
     private configService: ConfigService,
   ) {
-    const email = this.configService.get<string>('LOGIN')
-    const apiToken = this.configService.get<string>('API_KEY')
+    this.email = this.configService.get<string>('LOGIN')
+    this.apiToken = this.configService.get<string>('API_KEY')
     this.baseURL = this.configService.get<string>('JIRA_HOST')
 
     this.jira = new Version3Client({
       baseURL: this.baseURL,
       authentication: {
         basic: {
-          email,
-          apiToken,
+          email: this.email,
+          apiToken: this.apiToken,
         },
       },
     })
@@ -48,29 +50,24 @@ export class JiraService {
     return {
       createdLink,
       key: createdIssue.key,
+      id: createdIssue.id,
     }
   }
 
-  // TODO: Разобраться в загрузке файлов
-  public async attachFile(key: string, file: File, filePath: string) {
-    const form = new FormData()
+  public async attachFile(key: string, filePath: string) {
+    return new Promise((resolve) => {
+      // Solution by community: https://community.atlassian.com/t5/Jira-questions/Getting-415-403-500-when-attaching-file-to-the-issue/qaq-p/2453618
+      const curlCommand = `curl --location --request POST "${this.baseURL}/rest/api/3/issue/${key}/attachments" -u "${this.email}:${this.apiToken}" -H "X-Atlassian-Token: no-check" --form "file=@${filePath}"`
 
-    const fileBuffer = fs.readFileSync(filePath)
-    const blob = new Blob([fileBuffer])
-    form.append('file', blob)
+      exec(curlCommand, (error, _, stderr) => {
+        if (error) {
+          console.error(`Error: ${stderr}`)
+          throw new Error(`Failed to add attachment to JIRA issue. ${stderr}`)
+        }
 
-    const attachment = await this.jira.addAttachment(
-      key,
-      file,
-      // { ...file, type: 'image/jpeg' },
-      {
-        headers: {
-          'X-Atlassian-Token': 'no-check',
-        },
-      },
-    )
-
-    return attachment
+        resolve(resolve)
+      })
+    })
   }
 
   public async getProjects() {
