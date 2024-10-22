@@ -1,5 +1,4 @@
 import axios from 'axios'
 
-const request = axios
-
-export { request }
+export const request = axios
+export const CustomRequest = axios

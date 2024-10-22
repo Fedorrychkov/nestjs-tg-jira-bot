@@ -29,6 +29,9 @@ importers:
       jira-rest-sdk:
         specifier: ^0.2.1
         version: 0.2.1(debug@4.3.6)
+      jira.js:
+        specifier: ^4.0.2
+        version: 4.0.2(debug@4.3.6)
       lodash:
         specifier: ^4.17.21
         version: 4.17.21
@@ -1988,6 +1991,9 @@ packages:
   jira-rest-sdk@0.2.1:
     resolution: {integrity: sha512-4Z25iUhfITrXM7CcAmX2V8Na9Q14Ea5btWN3U7GMZ/BWgAcoB5mWkfk01NLg6oJOxu3BI0ot5CD+kBqBLwx7kA==}
 
+  jira.js@4.0.2:
+    resolution: {integrity: sha512-m9iwxYkJjGfExm/4I/XyLPraPyXAxuMrJXA3gXqZOEXQCwk1Ia7zmLVsqeDD8p9hhdX5iAaLJ8pg8iJTV5X1kw==}
+
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
 
@@ -2903,6 +2909,9 @@ packages:
 
   tslib@2.6.3:
     resolution: {integrity: sha512-xNvxJEOUiWPGhUuUdQgAJPKOOJfGnIyKySOc09XkKsgdUV/3E2zvwZYdejjmRgPCgcym1juLH3226yA7sEFJKQ==}
+
+  tslib@2.8.0:
+    resolution: {integrity: sha512-jWVzBLplnCmoaTr13V9dYbiQ99wvZRd0vNWaDRg+aVYRcjDF3nDksxFDE/+fkXnKhpnUUkmx5pK/v8mCtLVqZA==}
 
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
@@ -5465,6 +5474,14 @@ snapshots:
     transitivePeerDependencies:
       - debug
 
+  jira.js@4.0.2(debug@4.3.6):
+    dependencies:
+      axios: 1.7.7(debug@4.3.6)
+      form-data: 4.0.0
+      tslib: 2.8.0
+    transitivePeerDependencies:
+      - debug
+
   js-tokens@4.0.0: {}
 
   js-yaml@3.14.1:
@@ -6330,6 +6347,8 @@ snapshots:
       strip-bom: 3.0.0
 
   tslib@2.6.3: {}
+
+  tslib@2.8.0: {}
 
   type-check@0.4.0:
     dependencies:

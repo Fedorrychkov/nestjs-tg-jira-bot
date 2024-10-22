@@ -39,6 +39,7 @@
     "axios": "^1.7.7",
     "dayjs": "^1.11.12",
     "jira-rest-sdk": "^0.2.1",
+    "jira.js": "^4.0.2",
     "lodash": "^4.17.21",
     "multer": "1.4.5-lts.1",
     "nestjs-telegraf": "^2.8.1",

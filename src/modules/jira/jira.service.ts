@@ -1,14 +1,16 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { exec } from 'child_process'
+import { AgileClient } from 'jira.js'
 import NodeJsVersion3Client, { Version3Client } from 'jira-rest-sdk'
 
 @Injectable()
 export class JiraService {
   private jira: NodeJsVersion3Client
-  private baseURL: string
+  public baseURL: string
   private apiToken: string
   private email: string
+  private agileClient: AgileClient
 
   constructor(
     @Inject(ConfigService)
@@ -20,6 +22,16 @@ export class JiraService {
 
     this.jira = new Version3Client({
       baseURL: this.baseURL,
+      authentication: {
+        basic: {
+          email: this.email,
+          apiToken: this.apiToken,
+        },
+      },
+    })
+
+    this.agileClient = new AgileClient({
+      host: this.baseURL,
       authentication: {
         basic: {
           email: this.email,
@@ -52,6 +64,44 @@ export class JiraService {
       key: createdIssue.key,
       id: createdIssue.id,
     }
+  }
+
+  public async getActiveProjects() {
+    const projects = await this.jira.getAllProjects()
+
+    return projects
+  }
+
+  public async getProjectBoards(key: string) {
+    const boards = await this.agileClient.board.getAllBoards({
+      projectKeyOrId: key,
+    })
+
+    return boards
+  }
+
+  public async getBoardSprints(boardId: number) {
+    const boards = await this.agileClient.board.getAllSprints({
+      boardId,
+    })
+
+    return boards
+  }
+
+  public async getIssuesBySprint(sprintId: number) {
+    const issues = await this.agileClient.sprint.getIssuesForSprint({
+      sprintId,
+    })
+
+    return issues
+  }
+
+  public async getSprint(sprintId: number) {
+    const issues = await this.agileClient.sprint.getSprint({
+      sprintId,
+    })
+
+    return issues
   }
 
   public async attachFile(key: string, filePath: string) {

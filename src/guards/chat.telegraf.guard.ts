@@ -32,7 +32,9 @@ export class ChatTelegrafGuard extends SafeGuardInterceptor {
 
     const chatTypes = this.reflector?.get<string[]>('chatTypes', context.getHandler())
 
-    if (chatTypes && !chatTypes.includes(chatType)) {
+    const isAvailable = chatTypes && chatTypes.includes(chatType)
+
+    if (!isAvailable) {
       telegrafCtx
         .reply(`Эта команда не работает в данном типе чата, разрешено использование в ${chatTypes?.join(', ')}`)
         .then((response) => {
@@ -46,7 +48,7 @@ export class ChatTelegrafGuard extends SafeGuardInterceptor {
       return false
     }
 
-    if (!['supergroup'].includes(chatType)) {
+    if (!isAvailable && !['supergroup'].includes(chatType)) {
       telegrafCtx
         .reply(
           `
@@ -69,7 +71,7 @@ ${botWelcomeCommandsText}`,
     const chat = update?.message?.chat
     const replyMessage = update?.message?.reply_to_message
 
-    if (chat.id !== Number(this.chatId)) {
+    if (['supergroup'].includes(chatType) && chat.id !== Number(this.chatId)) {
       telegrafCtx.reply('Извините, но этот бот не поддерживает ваш чат').then((response) => {
         setTimeout(() => {
           telegrafCtx?.deleteMessage(response?.message_id)
@@ -84,18 +86,20 @@ ${botWelcomeCommandsText}`,
 
     const isTopic = !!topic
 
-    /**
-     * Если сообщение пришло не в топике, то игнорируем его и сбрасываем
-     */
-    if (!isTopic) {
-      return false
-    }
+    if (chat.id === Number(this.chatId)) {
+      /**
+       * Если сообщение пришло не в топике, то игнорируем его и сбрасываем
+       */
+      if (!isTopic) {
+        return false
+      }
 
-    /**
-     * Если сообщение отправлено из топика в верном формате
-     */
-    if (!topic?.name?.toLowerCase().includes('[jira&bot]:key=')) {
-      return false
+      /**
+       * Если сообщение отправлено из топика в верном формате
+       */
+      if (!topic?.name?.toLowerCase().includes('[jira&bot]:key=')) {
+        return false
+      }
     }
 
     request.chatContext = {
