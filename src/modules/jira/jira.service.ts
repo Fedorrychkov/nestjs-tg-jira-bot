@@ -91,6 +91,7 @@ export class JiraService {
   public async getIssuesBySprint(sprintId: number) {
     const issues = await this.agileClient.sprint.getIssuesForSprint({
       sprintId,
+      maxResults: 500,
     })
 
     return issues
