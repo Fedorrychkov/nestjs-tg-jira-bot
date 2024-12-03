@@ -1,4 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
+import * as dayjs from 'dayjs'
+import * as isBetween from 'dayjs/plugin/isBetween'
 import * as fs from 'fs'
 import { Action, Command, Ctx, Hears, On, Update } from 'nestjs-telegraf'
 import { MAIN_CALLBACK_DATA } from 'src/constants'
@@ -11,6 +13,8 @@ import { ChatTelegrafContextType, TgInitUser } from 'src/types'
 import { SceneContext } from 'telegraf/typings/scenes'
 
 import { UserContext } from '../../decorator/user.request.decorator'
+
+dayjs.extend(isBetween)
 
 @Update()
 @Injectable()
@@ -96,7 +100,6 @@ export class MainJiraSceneService {
     const boardIds = boards.values.map((board) => board.id)
     const sprints = await Promise.all(boardIds.map((boardId) => this.jiraService.getBoardSprints(boardId)))
 
-    this.logger.log(sprints, 'sprints')
     const activeSprints = sprints.flatMap((sprint) =>
       sprint.values.filter((sprint, index, values) => {
         if (sprint.state === 'active') return true
@@ -122,10 +125,40 @@ export class MainJiraSceneService {
     const [, key] = (ctx as any)?.update?.callback_query?.data?.split(' ')
 
     const sprint = await this.jiraService.getSprint(key)
-    const issues = await this.jiraService.getIssuesBySprint(key)
+    const definedIssues = await this.jiraService.getIssuesBySprint(key)
+
+    this.logger.log(sprint, 'issues')
+
+    const srtartDate = sprint.startDate
+    const endDate = sprint.completeDate || sprint.endDate
+
+    const issues = definedIssues.issues
+      .filter((issue) => {
+        const worklogs = issue.fields.worklog.worklogs
+
+        return worklogs.some((log) => {
+          const logDate = dayjs(log.created).isBetween(srtartDate, endDate)
+
+          return logDate
+        })
+      })
+      .map((issue) => {
+        return {
+          ...issue,
+          fields: {
+            ...issue.fields,
+            worklog: {
+              ...issue.fields.worklog,
+              worklogs: issue.fields.worklog.worklogs.filter((log) =>
+                dayjs(log.created).isBetween(srtartDate, endDate),
+              ),
+            },
+          },
+        }
+      })
 
     const handleGetTimetrackingPerUser = () => {
-      const usersSumOfTracking = issues.issues.reduce(
+      const usersSumOfTracking = issues.reduce(
         (
           all: Record<
             string,
@@ -134,7 +167,7 @@ export class MainJiraSceneService {
               timeSpent: number
             }
           >,
-          issue: (typeof issues.issues)[0],
+          issue: (typeof issues)[0],
         ) => {
           const worklogs = issue.fields.worklog.worklogs
 
@@ -178,19 +211,52 @@ export class MainJiraSceneService {
     }
 
     const handleGetIssuesTimeTrackingData = () => {
-      const timeTrackingData = issues.issues.map((issue) => ({
-        link: `${this.jiraService.baseURL}/browse/${issue.key}`,
-        title: `"${issue.fields.summary}"`,
-        status: issue.fields.status.name,
-        assigneeName: issue.fields.assignee?.displayName,
-        assigneeEmail: issue.fields.assignee?.emailAddress,
-        timeSpentHours: issue.fields.timespent ? `"${`${issue.fields.timespent / 3600}`.replace('.', ',')}"` : 0,
-        timetracking: issue.fields.worklog.worklogs
-          .map((log) => `"${log.author.displayName} ${log.timeSpent} ${log.comment || ''}"`)
-          .join('=>'),
-      }))
+      const timeTrackingData = issues
+        .reduce((parsedIssues: any[], issue) => {
+          const link = `${this.jiraService.baseURL}/browse/${issue.key}`
 
-      const keys = ['link', 'assigneeName', 'assigneeEmail', 'title', 'status', 'timeSpentHours', 'timetracking']
+          const issuesByWorklogAuthor: Record<string, any> = issue.fields.worklog.worklogs.reduce(
+            (acc: Record<string, any>, log) => {
+              const author = log.author.displayName
+
+              const definedRecord = acc[author]
+
+              if (definedRecord) {
+                return {
+                  ...acc,
+                  [author]: {
+                    ...definedRecord,
+                    timeSpent: (definedRecord?.timeSpent || 0) + log.timeSpentSeconds,
+                    timetracking: `${definedRecord?.timetracking || ''} => "${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
+                  },
+                }
+              }
+
+              const payload = {
+                link,
+                key: issue.key,
+                title: `"${issue.fields.summary}"`,
+                status: issue.fields.status.name,
+                assigneeName: log.author.displayName,
+                assigneeEmail: log.author?.emailAddress,
+                timeSpent: log.timeSpentSeconds,
+                timetracking: `"${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
+                id: issue.id,
+              }
+
+              return { ...acc, [author]: payload }
+            },
+            {} as Record<string, any>,
+          )
+
+          return [...parsedIssues, ...Object.values(issuesByWorklogAuthor)]
+        }, [])
+        .map((issue) => ({
+          ...issue,
+          timeSpentHours: issue.timeSpent ? `"${`${issue.timeSpent / 3600}`.replace('.', ',')}"` : 0,
+        }))
+
+      const keys = ['link', 'assigneeName', 'assigneeEmail', 'title', 'status', 'timeSpentHours', 'timetracking', 'id']
 
       let csvContent = ''
       const head = keys.join(',')
@@ -210,7 +276,7 @@ export class MainJiraSceneService {
     await ctx.replyWithDocument(
       { source: handleGetIssuesTimeTrackingData(), filename: `${sprint.name}_sprint_issues.csv` },
       {
-        caption: `Задачи за спринт: ${sprint.name}\nВсего задач: (${issues.issues.length})`,
+        caption: `Задачи за спринт: ${sprint.name}\nВсего задач: (${issues.length})`,
       },
     )
 
