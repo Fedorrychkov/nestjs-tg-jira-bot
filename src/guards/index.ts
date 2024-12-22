@@ -1,4 +1,5 @@
 export * from './chat.telegraf.guard'
+export * from './jira.telegraf.guard'
 export * from './remove.messages.telegraf.guard'
 export { UseSafeGuards } from './safe.guard.interceptor'
 export * from './user.supergroup.telegraf.guard'

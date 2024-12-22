@@ -5,11 +5,18 @@ import * as fs from 'fs'
 import { Action, Command, Ctx, Hears, On, Update } from 'nestjs-telegraf'
 import { MAIN_CALLBACK_DATA } from 'src/constants'
 import { getJiraProjectKeyboards, getJiraProjectSprintsKeyboards } from 'src/constants/keyboard'
-import { AvailableChatTypes, ChatTelegrafContext } from 'src/decorator'
-import { ChatTelegrafGuard, UserSupergroupTelegrafGuard, UserTelegrafGuard, UseSafeGuards } from 'src/guards'
-import { getImageFile } from 'src/helpers'
+import { AvailableChatTypes, ChatTelegrafContext, JiraConfig } from 'src/decorator'
+import {
+  ChatTelegrafGuard,
+  JiraTelegrafGuard,
+  UserSupergroupTelegrafGuard,
+  UserTelegrafGuard,
+  UseSafeGuards,
+} from 'src/guards'
+import { getImageFile, time } from 'src/helpers'
+import { CustomConfigService } from 'src/modules'
 import { JiraService } from 'src/modules/jira'
-import { ChatTelegrafContextType, TgInitUser } from 'src/types'
+import { ChatTelegrafContextType, JiraConfigType, TgInitUser } from 'src/types'
 import { SceneContext } from 'telegraf/typings/scenes'
 
 import { UserContext } from '../../decorator/user.request.decorator'
@@ -21,7 +28,10 @@ dayjs.extend(isBetween)
 export class MainJiraSceneService {
   private logger = new Logger(MainJiraSceneService.name)
 
-  constructor(private readonly jiraService: JiraService) {}
+  constructor(
+    private readonly jiraService: JiraService,
+    private readonly customConfigService: CustomConfigService,
+  ) {}
 
   @On('photo')
   @AvailableChatTypes('supergroup')
@@ -77,69 +87,135 @@ export class MainJiraSceneService {
   @Command(MAIN_CALLBACK_DATA.GET_PROJECTS)
   @Action(MAIN_CALLBACK_DATA.GET_PROJECTS)
   @AvailableChatTypes('private')
-  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard)
-  async getProjects(@Ctx() ctx: SceneContext) {
+  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard, JiraTelegrafGuard)
+  async getProjects(@Ctx() ctx: SceneContext, @JiraConfig() jiraConfig: JiraConfigType) {
     const response = await this.jiraService.getActiveProjects()
 
-    await ctx.reply('Активные проекты:', {
+    const projects = response
+      .filter((project) => {
+        if (jiraConfig.isSuperAdmin) {
+          return true
+        }
+
+        if (jiraConfig.availabilityListKeys.includes(project.key)) {
+          return true
+        }
+
+        return false
+      })
+      .map((project) => ({ key: project.key, name: project.name }))
+
+    if (!projects.length) {
+      await ctx.reply('Вам не доступен ни один проект, пожалуйста, обратитесь к администратору')
+
+      return
+    }
+
+    await ctx.reply(jiraConfig.isSuperAdmin ? 'Все активные проекты:' : 'Доступные Вам проекты:', {
       reply_markup: {
-        inline_keyboard: getJiraProjectKeyboards(
-          'private',
-          response.map((project) => project.key),
-        ),
+        inline_keyboard: getJiraProjectKeyboards('private', projects),
       },
     })
   }
+
   @Action(new RegExp(MAIN_CALLBACK_DATA.GET_SPRINTS_KEY_BY_PROJECT))
   @AvailableChatTypes('private')
-  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard)
-  async getSprintsByProject(@Ctx() ctx: SceneContext) {
+  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard, JiraTelegrafGuard)
+  async getSprintsByProject(@Ctx() ctx: SceneContext, @JiraConfig() jiraConfig: JiraConfigType) {
     const [, key] = (ctx as any)?.update?.callback_query?.data?.split(' ')
+
+    if (!jiraConfig.availabilityListKeys?.includes(key) && !jiraConfig.isSuperAdmin) {
+      await ctx.reply('Вам не доступен этот проект, пожалуйста, обратитесь к администратору')
+
+      return
+    }
 
     const boards = await this.jiraService.getProjectBoards(key)
     const boardIds = boards.values.map((board) => board.id)
     const sprints = await Promise.all(boardIds.map((boardId) => this.jiraService.getBoardSprints(boardId)))
 
-    const activeSprints = sprints.flatMap((sprint) =>
+    const filteredSprints = sprints.flatMap((sprint) =>
       sprint.values.filter((sprint, index, values) => {
         if (sprint.state === 'active') return true
 
-        if (index === values.length - 2) return true
+        if (index >= values.length - 4) return true
 
         return false
       }),
     )
-    this.logger.log(activeSprints)
 
-    await ctx.reply(`Project: ${key}\nSprints:`, {
-      reply_markup: {
-        inline_keyboard: getJiraProjectSprintsKeyboards('private', activeSprints),
+    const commonMessage = jiraConfig?.isSuperAdmin
+      ? 'Так как вы администратор, вам доступны все детали по задачам'
+      : 'Вам доступны только те задачи, в которых вы проводили работы'
+    await ctx.reply(
+      `Проект: #${key}\nПоследние 4 спринта (с учетом активных, закрытых и будущих):\n<b>${commonMessage}</b>`,
+      {
+        reply_markup: {
+          inline_keyboard: getJiraProjectSprintsKeyboards('private', filteredSprints),
+        },
+        parse_mode: 'HTML',
       },
-    })
+    )
   }
 
   @Action(new RegExp(MAIN_CALLBACK_DATA.GET_SPRINT_SPENT_TIME))
   @AvailableChatTypes('private')
-  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard)
-  async getSprintsSpentTime(@Ctx() ctx: SceneContext) {
+  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard, JiraTelegrafGuard)
+  async getSprintsSpentTime(@Ctx() ctx: SceneContext, @JiraConfig() jiraConfig: JiraConfigType) {
     const [, key] = (ctx as any)?.update?.callback_query?.data?.split(' ')
 
     const sprint = await this.jiraService.getSprint(key)
     const definedIssues = await this.jiraService.getIssuesBySprint(key)
 
-    this.logger.log(sprint, 'issues')
+    this.logger.log(sprint)
 
     const srtartDate = sprint.startDate
     const endDate = sprint.completeDate || sprint.endDate
 
-    const issues = definedIssues.issues
+    const parsedIssues = definedIssues.issues.filter((issue) => {
+      if (jiraConfig.isSuperAdmin) {
+        return true
+      }
+
+      if (jiraConfig.availabilityListKeys?.includes(issue.fields.project.key) || jiraConfig.isSuperAdmin) {
+        return true
+      }
+
+      return false
+    })
+
+    if (!parsedIssues.length) {
+      await ctx.reply(`У вас нет доступа к задачам спринта ${sprint.name}`)
+
+      return
+    }
+
+    const issues = parsedIssues
       .filter((issue) => {
+        if (jiraConfig.isSuperAdmin) {
+          return true
+        }
+
+        if (!jiraConfig.availabilityListKeys?.includes(issue.fields.project.key) && !jiraConfig.isSuperAdmin) {
+          return false
+        }
+
         const worklogs = issue.fields.worklog.worklogs
+        const parsedWorkLogs = worklogs.filter((log) => {
+          if (jiraConfig.isSuperAdmin) {
+            return true
+          }
 
-        return worklogs.some((log) => {
-          const logDate = dayjs(log.created).isBetween(srtartDate, endDate)
+          const availableByEmail = jiraConfig.relationNames.includes(log.author.emailAddress)
+          const availableByNickname = jiraConfig.relationNames.includes(log.author.displayName)
 
-          return logDate
+          return availableByEmail || availableByNickname
+        })
+
+        return parsedWorkLogs.some((log) => {
+          const isAvailableLogDate = dayjs(log.created).isBetween(srtartDate, endDate)
+
+          return isAvailableLogDate
         })
       })
       .map((issue) => {
@@ -165,21 +241,27 @@ export class MainJiraSceneService {
             {
               displayName: string
               timeSpent: number
+              projectKey: string
+              email?: string
             }
           >,
           issue: (typeof issues)[0],
         ) => {
           const worklogs = issue.fields.worklog.worklogs
+          const projectKey = issue.fields.project.key
 
           worklogs.forEach((log) => {
             const displayName = log.author.displayName
+            const email = log.author.emailAddress
             const accountId = log.author.accountId
             const timeSpent = log.timeSpentSeconds
 
             all[accountId] = {
               ...all[accountId],
               displayName,
+              email,
               timeSpent: (all[accountId]?.timeSpent || 0) + timeSpent,
+              projectKey,
             }
           })
 
@@ -188,12 +270,36 @@ export class MainJiraSceneService {
         {},
       )
 
-      const data = Object.entries(usersSumOfTracking).map(([, { displayName, timeSpent }]) => ({
-        displayName,
-        timeSpentHours: timeSpent ? `"${`${timeSpent / 3600}`.replace('.', ',')}"` : 0,
-      }))
+      const data = Object.entries(usersSumOfTracking).map(([, { displayName, email, timeSpent, projectKey }]) => {
+        const spendedTime = timeSpent ? timeSpent / 3600 : 0
+        const timeSpentHours = timeSpent ? `"${`${spendedTime}`.replace('.', ',')}"` : 0
 
-      const keys = ['displayName', 'timeSpentHours']
+        const relationTgNickname = this.customConfigService.relationUserNameOrIdWithJira.find(
+          (value) => value.relationValues.includes(email) || value.relationValues.includes(displayName),
+        )
+
+        const salaryRelation = jiraConfig.allSalaryRelationByTgAndProject?.[relationTgNickname?.nickNameOrId]
+
+        const currentProjectSalary = salaryRelation?.find((value) => value.key === projectKey)
+
+        const finalSalary = currentProjectSalary || salaryRelation?.[0]
+
+        return {
+          displayName,
+          timeSpentHours,
+          email,
+          telegram: relationTgNickname?.nickNameOrId,
+          salary: finalSalary?.amount,
+          currency: finalSalary?.currency,
+          type: finalSalary?.type === 'hourly' ? 'За час' : 'Фиксированная за спринт',
+          sumOfSalary:
+            finalSalary?.type === 'hourly'
+              ? Number(finalSalary?.amount) * Number(spendedTime || 0)
+              : finalSalary?.amount,
+        }
+      })
+
+      const keys = ['displayName', 'timeSpentHours', 'email', 'telegram', 'salary', 'currency', 'type', 'sumOfSalary']
 
       let csvContent = ''
       const head = keys.join(',')
@@ -273,15 +379,20 @@ export class MainJiraSceneService {
       return buffer
     }
 
+    const filename = `${sprint.name}_${time(srtartDate).format('DD-MM-YYYY_HH:mm')}_${time(endDate).format('DD-MM-YYYY_HH:mm')}_sprint_issues.csv`
+
     await ctx.replyWithDocument(
-      { source: handleGetIssuesTimeTrackingData(), filename: `${sprint.name}_sprint_issues.csv` },
+      { source: handleGetIssuesTimeTrackingData(), filename: `${filename}_${sprint.name}_sprint_issues.csv` },
       {
         caption: `Задачи за спринт: ${sprint.name}\nВсего задач: (${issues.length})`,
       },
     )
 
     await ctx.replyWithDocument(
-      { source: handleGetTimetrackingPerUser(), filename: `${sprint.name}_user_time_spent.csv` },
+      {
+        source: handleGetTimetrackingPerUser(),
+        filename: `${filename}_user_time_spent.csv`,
+      },
       {
         caption: `Потраченное время исполнителями за спринт: ${sprint.name}`,
       },
