@@ -333,10 +333,15 @@ export class MainJiraSceneService {
                   [author]: {
                     ...definedRecord,
                     timeSpent: (definedRecord?.timeSpent || 0) + log.timeSpentSeconds,
-                    timetracking: `${definedRecord?.timetracking || ''} => "${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
+                    timetracking: `${definedRecord?.timetracking || ''} => "\r\n${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
                   },
                 }
               }
+
+              const estimationTime =
+                (issue.fields.aggregatetimeoriginalestimate && issue.fields.aggregatetimeoriginalestimate / 3600) || 0
+              const fullFactSpentTime = (issue.fields.timespent && issue.fields.timespent / 3600) || 0
+              const overtimeSpent = fullFactSpentTime - estimationTime || 0
 
               const payload = {
                 link,
@@ -346,6 +351,13 @@ export class MainJiraSceneService {
                 assigneeName: log.author.displayName,
                 assigneeEmail: log.author?.emailAddress,
                 timeSpent: log.timeSpentSeconds,
+                sprintsHistory: (issue.fields as any).closedSprints
+                  ? `${(issue.fields as any).closedSprints?.map((sprint) => sprint.name).join(' => ')}`
+                  : '',
+                overtimeSpent:
+                  estimationTime && fullFactSpentTime
+                    ? `"Estimation: ${estimationTime}h, Fact: ${fullFactSpentTime}h" => "Overtimed: ${overtimeSpent > 0 ? `${overtimeSpent}h` : '0h'}"`
+                    : '',
                 timetracking: `"${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
                 id: issue.id,
               }
@@ -362,7 +374,18 @@ export class MainJiraSceneService {
           timeSpentHours: issue.timeSpent ? `"${`${issue.timeSpent / 3600}`.replace('.', ',')}"` : 0,
         }))
 
-      const keys = ['link', 'assigneeName', 'assigneeEmail', 'title', 'status', 'timeSpentHours', 'timetracking', 'id']
+      const keys = [
+        'link',
+        'assigneeName',
+        'assigneeEmail',
+        'title',
+        'status',
+        'timeSpentHours',
+        'timetracking',
+        'overtimeSpent',
+        'sprintsHistory',
+        'id',
+      ]
 
       let csvContent = ''
       const head = keys.join(',')
@@ -384,7 +407,7 @@ export class MainJiraSceneService {
     await ctx.replyWithDocument(
       { source: handleGetIssuesTimeTrackingData(), filename: `${filename}_${sprint.name}_sprint_issues.csv` },
       {
-        caption: `Задачи за спринт: ${sprint.name}\nВсего задач: (${issues.length})`,
+        caption: `Задачи за спринт: ${sprint.name}, ID=${sprint.id}\nВсего задач: (${issues.length})`,
       },
     )
 
@@ -394,7 +417,7 @@ export class MainJiraSceneService {
         filename: `${filename}_user_time_spent.csv`,
       },
       {
-        caption: `Потраченное время исполнителями за спринт: ${sprint.name}`,
+        caption: `Потраченное время исполнителями за спринт: ${sprint.name}, ID=${sprint.id}`,
       },
     )
   }
