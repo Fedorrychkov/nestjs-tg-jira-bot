@@ -247,7 +247,17 @@ export class MainJiraSceneService {
           >,
           issue: (typeof issues)[0],
         ) => {
-          const worklogs = issue.fields.worklog.worklogs
+          const worklogs = issue.fields.worklog.worklogs?.filter((log) => {
+            if (jiraConfig.isSuperAdmin) {
+              return true
+            }
+
+            const availableByEmail = jiraConfig.relationNames.includes(log.author.emailAddress)
+            const availableByName = jiraConfig.relationNames.includes(log.author.displayName)
+
+            return availableByEmail || availableByName
+          })
+
           const projectKey = issue.fields.project.key
 
           worklogs.forEach((log) => {
@@ -321,7 +331,18 @@ export class MainJiraSceneService {
         .reduce((parsedIssues: any[], issue) => {
           const link = `${this.jiraService.baseURL}/browse/${issue.key}`
 
-          const issuesByWorklogAuthor: Record<string, any> = issue.fields.worklog.worklogs.reduce(
+          const worklogs = issue.fields.worklog.worklogs?.filter((log) => {
+            if (jiraConfig.isSuperAdmin) {
+              return true
+            }
+
+            const availableByEmail = jiraConfig.relationNames.includes(log.author.emailAddress)
+            const availableByName = jiraConfig.relationNames.includes(log.author.displayName)
+
+            return availableByEmail || availableByName
+          })
+
+          const issuesByWorklogAuthor: Record<string, any> = worklogs.reduce(
             (acc: Record<string, any>, log) => {
               const author = log.author.displayName
 

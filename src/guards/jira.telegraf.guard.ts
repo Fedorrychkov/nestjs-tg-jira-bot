@@ -30,11 +30,12 @@ export class JiraTelegrafGuard extends SafeGuardInterceptor {
       const request = context.switchToHttp().getRequest()
 
       const from = update?.from || update?.message?.from
+      const username = from?.username
 
       const superAdminAvailabilityList = this.customConfigService.superAdminList
         .map((nickname) => nickname.toLowerCase().trim())
         .filter((usernameOrId) => {
-          if (usernameOrId.toLowerCase().trim() === from?.username?.toLowerCase().trim()) {
+          if (usernameOrId.toLowerCase().trim() === username?.toLowerCase().trim()) {
             return true
           }
 
@@ -46,7 +47,7 @@ export class JiraTelegrafGuard extends SafeGuardInterceptor {
         })
 
       const jiraAvailabilityListKeys = this.customConfigService.availabilityUsersByKeys.filter((values) => {
-        if (values.nicknamesOrIds.includes(from?.username?.toLowerCase().trim())) {
+        if (values.nicknamesOrIds.includes(username?.toLowerCase().trim())) {
           return true
         }
 
@@ -61,7 +62,7 @@ export class JiraTelegrafGuard extends SafeGuardInterceptor {
 
       const relationUserNameOrIdWithJira = this.customConfigService.relationUserNameOrIdWithJira
         .filter((values) => {
-          if (values.nickNameOrId.toLowerCase().trim() === from?.username?.toLowerCase().trim()) {
+          if (values.nickNameOrId.toLowerCase().trim() === username?.toLowerCase().trim()) {
             return true
           }
 
@@ -75,7 +76,7 @@ export class JiraTelegrafGuard extends SafeGuardInterceptor {
         .flatMap((value) => value)
 
       const salaryRelationByTgAndProjectByUsername =
-        this.customConfigService.salaryRelationByTgAndProject?.[from?.username?.toLowerCase().trim()]
+        this.customConfigService.salaryRelationByTgAndProject?.[username?.toLowerCase().trim()]
       const salaryRelationByTgAndProjectById =
         this.customConfigService.salaryRelationByTgAndProject?.[`${from?.id}`?.toLowerCase().trim()]
 
