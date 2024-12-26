@@ -1,0 +1,39 @@
+# .github/workflows/example.yml
+name: Pull Request Created sync with Jira
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  push-to-jira-bot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get ENV content
+        run: |
+          echo "${{ vars.JIRA_PUSH_BOT_ENV }}" > .env
+
+      - name: Export ENV variables
+        run: |
+          JIRA_BOT_HOST=$(grep JIRA_BOT_HOST .env | cut -d'=' -f2- | tr -d '[:space:]')
+          JIRA_BOT_SECRET=$(grep JIRA_BOT_SECRET .env | cut -d'=' -f2- | tr -d '[:space:]')
+          
+          echo "JIRA_BOT_HOST=$JIRA_BOT_HOST" >> "$GITHUB_ENV"
+          echo "JIRA_BOT_SECRET=$JIRA_BOT_SECRET" >> "$GITHUB_ENV"
+
+      - name: Send PR data to Jira Bot
+        run: |
+          pr_data=$(jq -n \
+            --arg url "${{ github.event.pull_request.html_url }}" \
+            --arg branch "${{ github.event.pull_request.head.ref }}" \
+            --arg title "${{ github.event.pull_request.title }}" \
+            '{
+              pr_url: $url,
+              branch_name: $branch,
+              pr_title: $title,
+            }')
+          
+          curl -X POST "${{ env.JIRA_BOT_HOST }}" \
+            -H "Content-Type: application/json" \
+            -H "x-api-key: ${{ env.JIRA_BOT_SECRET }}" \
+            --data "$pr_data"

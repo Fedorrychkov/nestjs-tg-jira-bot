@@ -3,13 +3,16 @@ import { ConfigModule, ConfigService } from '@nestjs/config'
 import { TelegrafModule } from 'nestjs-telegraf'
 import * as LocalSession from 'telegraf-session-local'
 
+import { AppController } from './app.controller'
 import { getEnvFile } from './env'
+import { JiraModule } from './modules/jira'
 import { MainSceneModule } from './scenes'
 
 const session = new LocalSession()
 
 @Module({
   imports: [
+    JiraModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: getEnvFile(),
@@ -24,7 +27,7 @@ const session = new LocalSession()
     }),
     MainSceneModule,
   ],
-  controllers: [],
+  controllers: [AppController],
   providers: [],
 })
 export class AppModule {}

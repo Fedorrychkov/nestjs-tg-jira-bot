@@ -105,6 +105,20 @@ export class JiraService {
     return issues
   }
 
+  public async getIssueByKey(key: string) {
+    const issues = await this.agileClient.issue.getIssue({
+      issueIdOrKey: key,
+    })
+
+    return issues
+  }
+
+  public async sendIssueComment(key: string, comment: string) {
+    const issues = await this.jira.addComment(key, { body: comment, author: { name: 'Jira Bot' } })
+
+    return issues
+  }
+
   public async attachFile(key: string, filePath: string) {
     return new Promise((resolve) => {
       // Solution by community: https://community.atlassian.com/t5/Jira-questions/Getting-415-403-500-when-attaching-file-to-the-issue/qaq-p/2453618
