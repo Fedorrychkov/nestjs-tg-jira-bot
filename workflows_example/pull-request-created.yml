@@ -5,6 +5,10 @@ on:
   pull_request:
     types: [opened]
 
+permissions:
+  pull-requests: write
+  issues: write
+
 jobs:
   push-to-jira-bot:
     runs-on: ubuntu-latest
