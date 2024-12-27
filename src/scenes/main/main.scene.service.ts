@@ -9,11 +9,10 @@ import {
   UseSafeGuards,
 } from 'src/guards'
 import { JiraService } from 'src/modules/jira'
-import { ChatTelegrafContextType, TgInitUser } from 'src/types'
+import { ChatTelegrafContextType } from 'src/types'
 import { Context } from 'telegraf'
 import { SceneContext } from 'telegraf/typings/scenes'
 
-import { UserContext } from './../../decorator/user.request.decorator'
 import { botWelcomeCommandsText } from './constants'
 
 @Update()
@@ -31,11 +30,7 @@ export class MainSceneService {
     UserSupergroupTelegrafGuard,
     RemoveSupergroupMessagesTelegrafGuard,
   )
-  async startCommand(
-    @Ctx() ctx: SceneContext,
-    @UserContext() userContext: TgInitUser,
-    @ChatTelegrafContext() chatContext: ChatTelegrafContextType,
-  ) {
+  async startCommand(@Ctx() ctx: SceneContext, @ChatTelegrafContext() chatContext: ChatTelegrafContextType) {
     const projects = await this.jiraService.getProjects()
     const projectKey = chatContext.topic?.name?.split('=')?.[1]
     const project = projects?.find((project) => project.key === projectKey)

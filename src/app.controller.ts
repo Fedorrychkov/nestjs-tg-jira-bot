@@ -71,24 +71,31 @@ export class AppController {
       uniqueIssueKeys.map(async (key) => {
         const issue = await this.jiraService.getIssueByKey(key)
 
+        this.logger.log(`Issue: ${issue.key}`, {
+          issue,
+        })
+
         const hasCommentWithUrl = issue?.fields?.comment?.comments?.some((comment) =>
           (comment as any).body.includes(payload.pr_url),
         )
 
         if (hasCommentWithUrl) {
           return
+        } else {
+          await this.jiraService.sendIssueComment(key, `Pull request created: ${payload.pr_url}`)
         }
-
-        await this.jiraService.sendIssueComment(key, `Pull request created: ${payload.pr_url}`)
 
         this.logger.log(`Issue: ${issue.key}`, {
           issue,
         })
+
+        return issue
       }),
     )
 
     return {
       uniqueIssueKeys,
+      issueLinks: uniqueIssueKeys.map((key) => `${this.jiraService.baseURL}/browse/${key}`),
     }
   }
 }

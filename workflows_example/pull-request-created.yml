@@ -22,6 +22,7 @@ jobs:
           echo "JIRA_BOT_SECRET=$JIRA_BOT_SECRET" >> "$GITHUB_ENV"
 
       - name: Send PR data to Jira Bot
+        id: jira-sync
         run: |
           pr_data=$(jq -n \
             --arg url "${{ github.event.pull_request.html_url }}" \
@@ -30,10 +31,29 @@ jobs:
             '{
               pr_url: $url,
               branch_name: $branch,
-              pr_title: $title,
+              pr_title: $title
             }')
           
-          curl -X POST "${{ env.JIRA_BOT_HOST }}" \
+          response=$(curl -X POST "${{ env.JIRA_BOT_HOST }}" \
             -H "Content-Type: application/json" \
             -H "x-api-key: ${{ env.JIRA_BOT_SECRET }}" \
-            --data "$pr_data"
+            --data "$pr_data" \
+            -s)
+          
+          # Сохраняем ссылки для следующего шага
+          echo "issue_links=$(echo "$response" | jq -r '.issueLinks | join("\n")')" >> $GITHUB_OUTPUT
+
+      - uses: actions/github-script@v3
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            const issueLinks = `${{ steps.jira-sync.outputs.issue_links }}`;
+            if (issueLinks) {
+              const comment = `🔗 Связанные задачи в Jira:\n${issueLinks}`;
+              github.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
