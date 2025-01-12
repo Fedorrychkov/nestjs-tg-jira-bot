@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common'
 import * as dayjs from 'dayjs'
 import * as isBetween from 'dayjs/plugin/isBetween'
 import * as fs from 'fs'
+import { Fields } from 'jira.js/out/version2/models'
 import { Action, Command, Ctx, Hears, On, Update } from 'nestjs-telegraf'
 import { MAIN_CALLBACK_DATA } from 'src/constants'
 import { getJiraProjectKeyboards, getJiraProjectSprintsKeyboards } from 'src/constants/keyboard'
@@ -13,7 +14,7 @@ import {
   UserTelegrafGuard,
   UseSafeGuards,
 } from 'src/guards'
-import { getImageFile, time } from 'src/helpers'
+import { getImageFile, jsonParse, time } from 'src/helpers'
 import { CustomConfigService } from 'src/modules'
 import { JiraService } from 'src/modules/jira'
 import { ChatTelegrafContextType, JiraConfigType, TgInitUser } from 'src/types'
@@ -132,7 +133,17 @@ export class MainJiraSceneService {
 
     const boards = await this.jiraService.getProjectBoards(key)
     const boardIds = boards.values.map((board) => board.id)
-    const sprints = await Promise.all(boardIds.map((boardId) => this.jiraService.getBoardSprints(boardId)))
+    const sprints = await Promise.all(
+      boardIds.map(async (boardId) => {
+        const defaultResponse = await this.jiraService.getBoardSprints(boardId)
+
+        if (defaultResponse.isLast) {
+          return defaultResponse
+        }
+
+        return this.jiraService.getBoardSprints(boardId, defaultResponse.total - 4)
+      }),
+    )
 
     const filteredSprints = sprints.flatMap((sprint) =>
       sprint.values.filter((sprint, index, values) => {
@@ -167,7 +178,23 @@ export class MainJiraSceneService {
     const sprint = await this.jiraService.getSprint(key)
     const definedIssues = await this.jiraService.getIssuesBySprint(key)
 
-    this.logger.log(sprint)
+    const currentIssueLenght = definedIssues.issues.length
+
+    if (definedIssues.total > currentIssueLenght) {
+      /**
+       * Генерим длину массива startAt свойств
+       */
+      const size = Math.floor(definedIssues.total / currentIssueLenght)
+
+      const startAtArray = Array.from({ length: size }, (_, index) => definedIssues.total * (index + 1))
+
+      for await (const startAt of startAtArray) {
+        const response = await this.jiraService.getIssuesBySprint(key, startAt)
+        definedIssues.issues.push(...response.issues)
+      }
+
+      return
+    }
 
     const srtartDate = sprint.startDate
     const endDate = sprint.completeDate || sprint.endDate
@@ -190,8 +217,32 @@ export class MainJiraSceneService {
       return
     }
 
-    const issues = parsedIssues
-      .filter((issue) => {
+    const preparedIssuesWithFullWorklogs = await Promise.all(
+      parsedIssues.map(async (issue) => {
+        if (issue.fields.worklog.total > issue.fields.worklog.worklogs.length) {
+          const response = await this.jiraService.getIssueWorklogs(issue.id)
+          const parsed = jsonParse<Fields['worklog']>(response)
+
+          if (parsed && typeof parsed === 'object' && 'worklogs' in parsed) {
+            return {
+              ...issue,
+              fields: {
+                ...issue.fields,
+                worklog: {
+                  ...issue.fields.worklog,
+                  ...parsed,
+                },
+              },
+            }
+          }
+        }
+
+        return issue
+      }),
+    )
+
+    const issues = preparedIssuesWithFullWorklogs
+      .filter(async (issue) => {
         if (jiraConfig.isSuperAdmin) {
           return true
         }
@@ -201,6 +252,7 @@ export class MainJiraSceneService {
         }
 
         const worklogs = issue.fields.worklog.worklogs
+
         const parsedWorkLogs = worklogs.filter((log) => {
           if (jiraConfig.isSuperAdmin) {
             return true
@@ -451,7 +503,25 @@ export class MainJiraSceneService {
     @UserContext() userContext: TgInitUser,
     @ChatTelegrafContext() chatContext: ChatTelegrafContextType,
   ) {
-    const projectKey = chatContext?.topic?.name?.split('=')?.[1]
+    const paramsString = chatContext?.topic?.name?.split(':')[1]
+    const params = paramsString?.split('&')
+
+    const paramsObject = params?.reduce((acc: Record<string, string>, param) => {
+      const [key, value] = param.split('=')
+      acc[key] = value
+
+      return acc
+    }, {})
+
+    const { key: projectKey, type: issueType = 'Bug' } = paramsObject
+
+    if (!projectKey) {
+      return
+    }
+
+    if (!['Bug', 'Task', 'Story'].includes(issueType)) {
+      return
+    }
 
     // В качестве тайтла вытаскиваем первый абзац и первые 100 символов
     const summary = ctx?.text?.split('\n')?.[0]?.slice(0, 100)
@@ -461,7 +531,7 @@ export class MainJiraSceneService {
     const { createdLink } = await this.jiraService.createTask({
       key: projectKey,
       summary: `[JiraBot] ${summary}`,
-      issueType: 'Bug',
+      issueType,
       description: `${description}\nCreated by bot from: https://t.me/c/${chatContext?.chat?.id?.toString()?.replace('-100', '')}/${chatContext?.threadMessageId}/${ctx?.message?.message_id}\nCaller user: @${userContext.username} (${userContext.firstName} ${userContext.lastName})`,
     })
 

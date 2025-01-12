@@ -102,7 +102,7 @@ ${botWelcomeCommandsText}`,
       }
     }
 
-    request.chatContext = {
+    const chatContext: ChatTelegrafContextType = {
       type: chat?.type,
       isChatWithTopics: chat?.is_forum || replyMessage?.is_topic_message,
       threadMessageId: replyMessage?.message_thread_id,
@@ -111,7 +111,9 @@ ${botWelcomeCommandsText}`,
       from: from,
       chat: update?.message?.chat,
       isEditableAvailable,
-    } as ChatTelegrafContextType
+    }
+
+    request.chatContext = chatContext
 
     return true
   }

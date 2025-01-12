@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
+import { Axios } from 'axios'
 import { exec } from 'child_process'
 import { AgileClient } from 'jira.js'
 import NodeJsVersion3Client, { Version3Client } from 'jira-rest-sdk'
@@ -7,6 +8,7 @@ import NodeJsVersion3Client, { Version3Client } from 'jira-rest-sdk'
 @Injectable()
 export class JiraService {
   private jira: NodeJsVersion3Client
+  private api: Axios
   public baseURL: string
   private apiToken: string
   private email: string
@@ -19,6 +21,14 @@ export class JiraService {
     this.email = this.configService.get<string>('LOGIN')
     this.apiToken = this.configService.get<string>('API_KEY')
     this.baseURL = this.configService.get<string>('JIRA_HOST')
+
+    this.api = new Axios({
+      baseURL: this.baseURL,
+      auth: {
+        username: this.email,
+        password: this.apiToken,
+      },
+    })
 
     this.jira = new Version3Client({
       baseURL: this.baseURL,
@@ -41,7 +51,7 @@ export class JiraService {
     })
   }
 
-  public async createTask(payload: { summary: string; description: string; key: string; issueType: 'Task' | 'Bug' }) {
+  public async createTask(payload: { summary: string; description: string; key: string; issueType: string }) {
     const { summary, description, key, issueType } = payload
 
     const createdIssue = await this.jira.createIssue({
@@ -80,21 +90,29 @@ export class JiraService {
     return boards
   }
 
-  public async getBoardSprints(boardId: number) {
+  public async getBoardSprints(boardId: number, startAt = 0) {
     const boards = await this.agileClient.board.getAllSprints({
       boardId,
+      startAt: startAt > 0 ? startAt : 0,
     })
 
     return boards
   }
 
-  public async getIssuesBySprint(sprintId: number) {
+  public async getIssuesBySprint(sprintId: number, startAt = 0) {
     const issues = await this.agileClient.sprint.getIssuesForSprint({
       sprintId,
       maxResults: 500,
+      startAt: startAt > 0 ? startAt : 0,
     })
 
     return issues
+  }
+
+  public async getIssueWorklogs(issueId: string) {
+    const response = await this.api.get(`/rest/api/2/issue/${issueId}/worklog`)
+
+    return response.data
   }
 
   public async getSprint(sprintId: number) {
