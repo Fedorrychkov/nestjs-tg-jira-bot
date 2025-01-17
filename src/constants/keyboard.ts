@@ -61,3 +61,43 @@ export const getJiraProjectSprintsKeyboards = (type: 'private' | 'supergroup', s
 
   return btns
 }
+
+export const getGithubProjectWorkflowsKeyboards = (
+  type: 'private' | 'supergroup',
+  projects: { key: string; name: string }[],
+) => {
+  const btns = []
+
+  if (type === 'private') {
+    for (const project of projects) {
+      btns.push([
+        {
+          text: `${project.name}`,
+          callback_data: `${MAIN_CALLBACK_DATA.GET_GITHUB_PROJECTS_WORKFLOWS} ${project.key}`,
+        },
+      ])
+    }
+  }
+
+  return btns
+}
+
+export const getGithubProjectWorkflowsItemsKeyboards = (
+  type: 'private' | 'supergroup',
+  projects: { key: string; name: string }[],
+) => {
+  const btns = []
+
+  if (type === 'private') {
+    for (const project of projects) {
+      btns.push([
+        {
+          text: `${project.name}`,
+          callback_data: `${MAIN_CALLBACK_DATA.GET_GITHUB_PROJECTS_WORKFLOWS_ITEM} ${project.key}`,
+        },
+      ])
+    }
+  }
+
+  return btns
+}

@@ -21,6 +21,7 @@ import { ChatTelegrafContextType, JiraConfigType, TgInitUser } from 'src/types'
 import { SceneContext } from 'telegraf/typings/scenes'
 
 import { UserContext } from '../../decorator/user.request.decorator'
+import { createNonCommandRegex } from './utils'
 
 dayjs.extend(isBetween)
 
@@ -495,7 +496,7 @@ export class MainJiraSceneService {
     )
   }
 
-  @Hears(/.*/)
+  @Hears(createNonCommandRegex(MAIN_CALLBACK_DATA))
   @AvailableChatTypes('supergroup')
   @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard, UserSupergroupTelegrafGuard)
   async taskCreation(

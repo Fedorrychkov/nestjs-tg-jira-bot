@@ -1,6 +1,6 @@
 {
   "name": "nestjs-tg-jira-bot",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "",
   "author": "",
   "private": true,
@@ -36,6 +36,7 @@
     "@nestjs/config": "^3.2.3",
     "@nestjs/core": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
+    "@octokit/rest": "18.12.0",
     "axios": "^1.7.7",
     "dayjs": "^1.11.12",
     "jira-rest-sdk": "^0.2.1",

@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { SalaryRelationByTgAndProject } from 'src/types'
+import { GithubWorkflowParams, GithubWorkflowSettings, SalaryRelationByTgAndProject } from 'src/types'
 
 @Injectable()
 export class CustomConfigService {
@@ -12,6 +12,7 @@ export class CustomConfigService {
   public availabilityUsersByKeys: { key: string; nicknamesOrIds: string[] }[]
   public relationUserNameOrIdWithJira: { nickNameOrId: string; relationValues: string[] }[]
   public salaryRelationByTgAndProject: SalaryRelationByTgAndProject
+  public githubWorkflowSettings: GithubWorkflowSettings
 
   constructor(
     @Inject(ConfigService)
@@ -66,5 +67,54 @@ export class CustomConfigService {
 
         return acc
       }, {})
+
+    const githubWorkflowSettings = this.configService.get<string>('GITHUB_WORKFLOW_SETTINGS')?.split('|') || []
+
+    this.githubWorkflowSettings = githubWorkflowSettings
+      .map((workflowValues) => {
+        const [repoName, values] = workflowValues.split(':')
+
+        const params = values
+          .replace(/{|}/g, '')
+          .split(',')
+          .map((values) => {
+            const [key, value] = values.split('=')
+
+            return { key, value }
+          })
+
+        const options = params.reduce((acc, curr) => {
+          acc[curr.key] = curr.value
+
+          return acc
+        }, {} as GithubWorkflowParams)
+
+        const { branch, environment, workflowId, appType, owner } = options
+
+        return { repoName, branch, environment, workflowId, appType, owner }
+      })
+      .reduce((acc, curr) => {
+        const { repoName, environment, appType } = curr
+        const valueByRepoName = acc[repoName] || {}
+        const envKey = `${environment}-${appType}`
+        const optionsByEnvironment = valueByRepoName[envKey] || {}
+
+        const payload = {
+          [envKey]: {
+            ...optionsByEnvironment,
+            ...curr,
+          },
+        }
+
+        const newAcc = {
+          ...acc,
+          [repoName]: {
+            ...valueByRepoName,
+            ...payload,
+          },
+        }
+
+        return newAcc
+      }, {} as GithubWorkflowSettings)
   }
 }

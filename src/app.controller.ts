@@ -18,8 +18,6 @@ export class AppController {
 
   @Post('/webhook')
   async webhook(@Body() payload: GithubWebhookPayload, @Headers('x-api-key') apiKey: string) {
-    console.log(payload)
-
     if (apiKey !== this.webhookSecret) {
       throw new UnauthorizedException('Invalid API key')
     }

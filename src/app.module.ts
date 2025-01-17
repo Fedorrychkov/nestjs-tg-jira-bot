@@ -5,6 +5,7 @@ import * as LocalSession from 'telegraf-session-local'
 
 import { AppController } from './app.controller'
 import { getEnvFile } from './env'
+import { GithubModule } from './modules/github'
 import { JiraModule } from './modules/jira'
 import { MainSceneModule } from './scenes'
 
@@ -13,6 +14,7 @@ const session = new LocalSession()
 @Module({
   imports: [
     JiraModule,
+    GithubModule,
     ConfigModule.forRoot({
       isGlobal: true,
       envFilePath: getEnvFile(),
