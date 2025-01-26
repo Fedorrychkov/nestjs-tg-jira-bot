@@ -381,7 +381,7 @@ export class MainJiraSceneService {
 
     const handleGetIssuesTimeTrackingData = () => {
       const timeTrackingData = issues
-        .reduce((parsedIssues: any[], issue) => {
+        .reduce((parsedIssues, issue) => {
           const link = `${this.jiraService.baseURL}/browse/${issue.key}`
 
           const worklogs = issue.fields.worklog.worklogs?.filter((log) => {
@@ -395,51 +395,48 @@ export class MainJiraSceneService {
             return availableByEmail || availableByName
           })
 
-          const issuesByWorklogAuthor: Record<string, any> = worklogs.reduce(
-            (acc: Record<string, any>, log) => {
-              const author = log.author.displayName
+          const issuesByWorklogAuthor = worklogs.reduce((acc, log) => {
+            const author = log.author.displayName
 
-              const definedRecord = acc[author]
+            const definedRecord = acc[author]
 
-              if (definedRecord) {
-                return {
-                  ...acc,
-                  [author]: {
-                    ...definedRecord,
-                    timeSpent: (definedRecord?.timeSpent || 0) + log.timeSpentSeconds,
-                    timetracking: `${definedRecord?.timetracking || ''} => "\r\n${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
-                  },
-                }
+            if (definedRecord) {
+              return {
+                ...acc,
+                [author]: {
+                  ...definedRecord,
+                  timeSpent: (definedRecord?.timeSpent || 0) + log.timeSpentSeconds,
+                  timetracking: `${definedRecord?.timetracking || ''} => "\r\n${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
+                },
               }
+            }
 
-              const estimationTime =
-                (issue.fields.aggregatetimeoriginalestimate && issue.fields.aggregatetimeoriginalestimate / 3600) || 0
-              const fullFactSpentTime = (issue.fields.timespent && issue.fields.timespent / 3600) || 0
-              const overtimeSpent = fullFactSpentTime - estimationTime || 0
+            const estimationTime =
+              (issue.fields.aggregatetimeoriginalestimate && issue.fields.aggregatetimeoriginalestimate / 3600) || 0
+            const fullFactSpentTime = (issue.fields.timespent && issue.fields.timespent / 3600) || 0
+            const overtimeSpent = fullFactSpentTime - estimationTime || 0
 
-              const payload = {
-                link,
-                key: issue.key,
-                title: `"${issue.fields.summary}"`,
-                status: issue.fields.status.name,
-                assigneeName: log.author.displayName,
-                assigneeEmail: log.author?.emailAddress,
-                timeSpent: log.timeSpentSeconds,
-                sprintsHistory: (issue.fields as any).closedSprints
-                  ? `${(issue.fields as any).closedSprints?.map((sprint) => sprint.name).join(' => ')}`
+            const payload = {
+              link,
+              key: issue.key,
+              title: `"${issue.fields.summary}"`,
+              status: issue.fields.status.name,
+              assigneeName: log.author.displayName,
+              assigneeEmail: log.author?.emailAddress,
+              timeSpent: log.timeSpentSeconds,
+              sprintsHistory: (issue.fields as any).closedSprints
+                ? `${(issue.fields as any).closedSprints?.map((sprint) => sprint.name).join(' => ')}`
+                : '',
+              overtimeSpent:
+                estimationTime && fullFactSpentTime
+                  ? `"Estimation: ${estimationTime}h, Fact: ${fullFactSpentTime}h" => "Overtimed: ${overtimeSpent > 0 ? `${overtimeSpent}h` : '0h'}"`
                   : '',
-                overtimeSpent:
-                  estimationTime && fullFactSpentTime
-                    ? `"Estimation: ${estimationTime}h, Fact: ${fullFactSpentTime}h" => "Overtimed: ${overtimeSpent > 0 ? `${overtimeSpent}h` : '0h'}"`
-                    : '',
-                timetracking: `"${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
-                id: issue.id,
-              }
+              timetracking: `"${author} ${`${log.timeSpentSeconds / 3600}`.replace('.', ',')} ${log.comment || ''}"`,
+              id: issue.id,
+            }
 
-              return { ...acc, [author]: payload }
-            },
-            {} as Record<string, any>,
-          )
+            return { ...acc, [author]: payload }
+          }, {})
 
           return [...parsedIssues, ...Object.values(issuesByWorklogAuthor)]
         }, [])
@@ -447,6 +444,20 @@ export class MainJiraSceneService {
           ...issue,
           timeSpentHours: issue.timeSpent ? `"${`${issue.timeSpent / 3600}`.replace('.', ',')}"` : 0,
         }))
+
+      const groupedByAuthor = timeTrackingData?.reduce((acc, item) => {
+        const key = `${item.assigneeName}-${item.assigneeEmail}`
+        const containerByNameIssues = acc?.[key] || []
+
+        return {
+          ...acc,
+          [key]: [...containerByNameIssues, item],
+        }
+      }, {})
+
+      const groupedTimeTrackingData = Object.values(groupedByAuthor)
+        .map((items) => items)
+        .flat?.()
 
       const keys = [
         'link',
@@ -465,7 +476,7 @@ export class MainJiraSceneService {
       const head = keys.join(',')
       csvContent += `${head}\r\n`
 
-      timeTrackingData?.forEach((item: Record<string, string | number>) => {
+      groupedTimeTrackingData?.forEach((item: Record<string, string | number>) => {
         const rowArray = keys?.map((key) => item?.[key])
         const row = rowArray.join(',')
         csvContent += `${row}\r\n`
