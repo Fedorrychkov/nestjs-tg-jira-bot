@@ -199,6 +199,12 @@ export class GithubService {
       }
     }
 
+    this.logger.log({
+      message: 'Review PR result',
+      ress: ress.length,
+      errors: errors.length,
+    })
+
     const endTime = Date.now()
 
     const diffTime = endTime - startTime

@@ -22,6 +22,7 @@ export class OpenAiService {
     this.client = axios.create({
       baseURL: 'https://api.openai.com/v1',
       headers: {
+        'Content-Type': 'application/json',
         Authorization: `Bearer ${this.openaiApiKey}`,
       },
     })
@@ -54,47 +55,58 @@ export class OpenAiService {
   }
 
   async codeReview(filename: string, patch: string, model: string, language?: string) {
-    if (!patch || !filename) {
+    try {
+      if (!patch || !filename) {
+        return {
+          lgtm: true,
+          review_comment: '',
+        }
+      }
+
+      const prompt = this.generatePrompt(filename, patch, model, language)
+
+      const response = await this.client.post('/chat/completions', {
+        messages: [
+          {
+            role: 'user',
+            content: prompt,
+          },
+        ],
+        model,
+        temperature: 1,
+        top_p: 1,
+        max_completion_tokens: undefined,
+        response_format: {
+          type: 'json_object',
+        },
+      })
+
+      if (Array.isArray(response?.data?.choices) && response?.data?.choices?.length) {
+        try {
+          const json = JSON.parse(response.data.choices[0].message.content || '')
+
+          return json
+        } catch (e) {
+          this.logger.error('Error in code review JSON parse', e)
+
+          return {
+            lgtm: false,
+            review_comment: response.data.choices[0].message.content || '',
+          }
+        }
+      }
+
       return {
         lgtm: true,
         review_comment: '',
       }
-    }
+    } catch (e) {
+      this.logger.error('Error in code review', e)
 
-    const prompt = this.generatePrompt(filename, patch, model, language)
-
-    const response = await this.client.post('/chat/completions', {
-      messages: [
-        {
-          role: 'user',
-          content: prompt,
-        },
-      ],
-      model,
-      temperature: 1,
-      top_p: 1,
-      max_completion_tokens: undefined,
-      response_format: {
-        type: 'json_object',
-      },
-    })
-
-    if (Array.isArray(response?.data?.choices) && response?.data?.choices?.length) {
-      try {
-        const json = JSON.parse(response.data.choices[0].message.content || '')
-
-        return json
-      } catch (e) {
-        return {
-          lgtm: false,
-          review_comment: response.data.choices[0].message.content || '',
-        }
+      return {
+        lgtm: true,
+        review_comment: '',
       }
-    }
-
-    return {
-      lgtm: true,
-      review_comment: '',
     }
   }
 }

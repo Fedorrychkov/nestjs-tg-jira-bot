@@ -107,6 +107,10 @@ export class AppController {
     }
 
     try {
+      this.logger.log({
+        payload,
+        message: 'Try to review PR DTO',
+      })
       const message = await this.githubService.tryToReviewPR(payload)
 
       return {
