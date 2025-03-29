@@ -104,12 +104,25 @@ export class GithubService {
       return `Invalid model: ${model}`
     }
 
-    const data = await this.octokit.repos.compareCommits({
-      owner: owner,
-      repo: repo,
-      base: baseSha,
-      head: headSha,
-    })
+    const data = await this.octokit.repos
+      .compareCommits({
+        owner: owner,
+        repo: repo,
+        base: baseSha,
+        head: headSha,
+      })
+      .catch((e) => {
+        this.logger.error('Error in compareCommits first try', e)
+        this.logger.error('Error in compareCommits first try', {
+          error: e.message,
+          status: e.response?.status,
+          data: e.response?.data,
+        })
+
+        return {
+          data: { files: [], commits: [] },
+        }
+      })
 
     const { files, commits } = data.data
 
@@ -122,12 +135,25 @@ export class GithubService {
     if (action === 'synchronize' && commits.length >= 2) {
       const {
         data: { files },
-      } = await this.octokit.repos.compareCommits({
-        owner: owner,
-        repo: repo,
-        base: commits[commits.length - 2].sha,
-        head: commits[commits.length - 1].sha,
-      })
+      } = await this.octokit.repos
+        .compareCommits({
+          owner: owner,
+          repo: repo,
+          base: commits[commits.length - 2].sha,
+          head: commits[commits.length - 1].sha,
+        })
+        .catch((e) => {
+          this.logger.error('Error in compareCommits second try', e)
+          this.logger.error('Error in compareCommits second try', {
+            error: e.message,
+            status: e.response?.status,
+            data: e.response?.data,
+          })
+
+          return {
+            data: { files: [], commits: [] },
+          }
+        })
 
       changedFiles = files
     }

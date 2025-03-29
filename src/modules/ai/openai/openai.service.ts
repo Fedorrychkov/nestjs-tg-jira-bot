@@ -57,13 +57,26 @@ export class OpenAiService {
   async codeReview(filename: string, patch: string, model: string, language?: string) {
     try {
       if (!patch || !filename) {
+        this.logger.warn('Empty patch or filename provided')
+
         return {
           lgtm: true,
           review_comment: '',
         }
       }
 
+      if (!OpenAiService.models.includes(model)) {
+        this.logger.error(`Unsupported model: ${model}`)
+        throw new Error(`Model ${model} is not supported`)
+      }
+
       const prompt = this.generatePrompt(filename, patch, model, language)
+
+      this.logger.debug('Sending request to OpenAI', {
+        model,
+        filename,
+        patchLength: patch.length,
+      })
 
       const response = await this.client.post('/chat/completions', {
         messages: [
@@ -75,10 +88,14 @@ export class OpenAiService {
         model,
         temperature: 1,
         top_p: 1,
-        max_completion_tokens: undefined,
         response_format: {
           type: 'json_object',
         },
+      })
+
+      this.logger.debug('Received response from OpenAI', {
+        status: response.status,
+        hasChoices: !!response?.data?.choices?.length,
       })
 
       if (Array.isArray(response?.data?.choices) && response?.data?.choices?.length) {
@@ -101,7 +118,12 @@ export class OpenAiService {
         review_comment: '',
       }
     } catch (e) {
-      this.logger.error('Error in code review', e)
+      this.logger.error('Error in code review', {
+        error: e.message,
+        status: e.response?.status,
+        data: e.response?.data,
+      })
+      this.logger.error(e)
 
       return {
         lgtm: true,

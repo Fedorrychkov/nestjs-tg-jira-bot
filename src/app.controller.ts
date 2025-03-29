@@ -111,7 +111,12 @@ export class AppController {
         payload,
         message: 'Try to review PR DTO',
       })
-      const message = await this.githubService.tryToReviewPR(payload)
+      const { repo } = payload
+
+      const message = await this.githubService.tryToReviewPR({
+        ...payload,
+        repo: repo?.includes('/') ? repo.split('/')[1] : repo,
+      })
 
       return {
         message,
