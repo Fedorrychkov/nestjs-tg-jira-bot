@@ -2,6 +2,8 @@ import { Body, Controller, Headers, Logger, NotFoundException, Post, Unauthorize
 import { ConfigService } from '@nestjs/config'
 
 import { GithubWebhookPayload } from './app.types'
+import { GithubService } from './modules/github'
+import { CompareCommitsPRType } from './modules/github/github.types'
 import { JiraService } from './modules/jira'
 
 @Controller('api/github')
@@ -12,6 +14,7 @@ export class AppController {
   constructor(
     private readonly jiraService: JiraService,
     private readonly configService: ConfigService,
+    private readonly githubService: GithubService,
   ) {
     this.webhookSecret = this.configService.get('GITHUB_WEBHOOK_SECRET')
   }
@@ -94,6 +97,27 @@ export class AppController {
     return {
       uniqueIssueKeys,
       issueLinks: uniqueIssueKeys.map((key) => `${this.jiraService.baseURL}/browse/${key}`),
+    }
+  }
+
+  @Post('/webhook/review')
+  async webhookReview(@Body() payload: CompareCommitsPRType, @Headers('x-api-key') apiKey: string) {
+    if (apiKey !== this.webhookSecret) {
+      throw new UnauthorizedException('Invalid API key')
+    }
+
+    try {
+      const message = await this.githubService.tryToReviewPR(payload)
+
+      return {
+        message,
+      }
+    } catch (error) {
+      this.logger.error(error)
+
+      return {
+        message: 'Error',
+      }
     }
   }
 }

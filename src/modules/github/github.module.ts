@@ -1,9 +1,10 @@
 import { Module } from '@nestjs/common'
 
+import { AiModule } from '../ai'
 import { GithubService } from './github.service'
 
 @Module({
-  imports: [],
+  imports: [AiModule],
   controllers: [],
   providers: [GithubService],
   exports: [GithubService],
