@@ -335,7 +335,7 @@ export class MainJiraSceneService {
 
       const data = Object.entries(usersSumOfTracking).map(([, { displayName, email, timeSpent, projectKey }]) => {
         const spendedTime = timeSpent ? timeSpent / 3600 : 0
-        const timeSpentHours = timeSpent ? `"${`${spendedTime}`.replace('.', ',')}"` : 0
+        const timeSpentHours = timeSpent ? `"${spendedTime.toString().replace('.', ',')}"` : 0
 
         const relationTgNickname = this.customConfigService.relationUserNameOrIdWithJira.find(
           (value) => value.relationValues.includes(email) || value.relationValues.includes(displayName),
@@ -347,25 +347,56 @@ export class MainJiraSceneService {
 
         const finalSalary = currentProjectSalary || salaryRelation?.[0]
 
+        const expectedTimeSpentHours = finalSalary?.hours || 0
+
+        const isSmallerThanHours =
+          spendedTime && expectedTimeSpentHours ? Number(spendedTime) < Number(expectedTimeSpentHours) : false
+
+        const computedExpectedSalary =
+          finalSalary?.type === 'hourly' ? Number(finalSalary?.amount) * Number(spendedTime || 0) : finalSalary?.amount
+
+        const realSumOfSalary =
+          finalSalary?.type === 'hourly'
+            ? computedExpectedSalary
+            : expectedTimeSpentHours
+              ? (Number(finalSalary?.amount) / Number(expectedTimeSpentHours)) * Number(spendedTime || 0)
+              : finalSalary?.amount
+
         return {
           displayName,
           timeSpentHours,
-          email,
-          telegram: relationTgNickname?.nickNameOrId,
-          salary: finalSalary?.amount,
-          currency: finalSalary?.currency,
-          type: finalSalary?.type === 'hourly' ? 'За час' : 'Фиксированная за спринт',
-          sumOfSalary:
-            finalSalary?.type === 'hourly'
-              ? Number(finalSalary?.amount) * Number(spendedTime || 0)
-              : finalSalary?.amount,
+          communication: `"${email ? `email: ${email}\r\n` : ''}${relationTgNickname?.nickNameOrId ? `telegram: @${relationTgNickname?.nickNameOrId}` : ''}"`,
+          salary: `"${finalSalary?.amount?.toString().replace('.', ',')} ${finalSalary?.currency} / ${finalSalary?.type === 'hourly' ? 'час' : 'спринт'}"`,
+          expectedTimeSpentHours: expectedTimeSpentHours
+            ? `"${isSmallerThanHours ? '⚠️ ' : ''}\r\nУчтено: ${spendedTime?.toString().replace('.', ',')} h\r\nОжидания: ${expectedTimeSpentHours?.toString().replace('.', ',')} h"`
+            : '',
+          sumOfSalary: `"${computedExpectedSalary?.toString().replace('.', ',')} ${finalSalary?.currency}"`,
+          realSumOfSalary: `"${realSumOfSalary?.toString().replace('.', ',')} ${finalSalary?.currency}\r\n${isSmallerThanHours ? '⚠️ Вы не выработали Вашу норму часов. Если нет объективных причин, то к Вам будут вопросы перед начислением зарплаты' : ''}"`,
         }
       })
 
-      const keys = ['displayName', 'timeSpentHours', 'email', 'telegram', 'salary', 'currency', 'type', 'sumOfSalary']
+      const keys = [
+        'displayName',
+        'timeSpentHours',
+        'communication',
+        'salary',
+        'sumOfSalary',
+        'expectedTimeSpentHours',
+        'realSumOfSalary',
+      ]
+
+      const names = {
+        displayName: 'Имя',
+        timeSpentHours: 'Затрекано (h)',
+        communication: 'Контакты',
+        salary: 'Условия',
+        sumOfSalary: 'Сумма зарплаты',
+        expectedTimeSpentHours: 'Ожидания (h)',
+        realSumOfSalary: 'Заработано с учетом условий',
+      }
 
       let csvContent = ''
-      const head = keys.join(',')
+      const head = keys.map((key) => names[key]).join(',')
       csvContent += `${head}\r\n`
 
       data?.forEach((item: Record<string, string | number>) => {
@@ -373,6 +404,8 @@ export class MainJiraSceneService {
         const row = rowArray.join(',')
         csvContent += `${row}\r\n`
       })
+
+      csvContent += `,,,Всего задач в спринте: ${currentIssueLenght}, Ключ спринта: ${key}, Спринт: ${sprint.name}, Дата: ${srtartDate} - ${endDate}\r\n`
 
       const buffer = Buffer.from(csvContent, 'utf-8')
 

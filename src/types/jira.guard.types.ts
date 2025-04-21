@@ -11,6 +11,7 @@ export type SelfSalaryRelationByTgAndProject = {
   currency: string
   type: 'fixed' | 'hourly'
   key?: string
+  hours?: number
 }
 
 export type SalaryRelationByTgAndProject = Record<string, SelfSalaryRelationByTgAndProject[]>
