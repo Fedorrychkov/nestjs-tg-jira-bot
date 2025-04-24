@@ -4,6 +4,7 @@ import { Axios } from 'axios'
 import { exec } from 'child_process'
 import { AgileClient } from 'jira.js'
 import NodeJsVersion3Client, { Version3Client } from 'jira-rest-sdk'
+import { User } from 'jira-rest-sdk/dist/v3/data-contracts'
 
 @Injectable()
 export class JiraService {
@@ -51,8 +52,14 @@ export class JiraService {
     })
   }
 
-  public async createTask(payload: { summary: string; description: string; key: string; issueType: string }) {
-    const { summary, description, key, issueType } = payload
+  public async createTask(payload: {
+    summary: string
+    description: string
+    key: string
+    issueType: string
+    fields?: Record<string, any>
+  }) {
+    const { summary, description, key, issueType, fields } = payload
 
     const createdIssue = await this.jira.createIssue({
       fields: {
@@ -64,6 +71,7 @@ export class JiraService {
         project: {
           key: key,
         },
+        ...fields,
       },
     })
 
@@ -74,6 +82,18 @@ export class JiraService {
       key: createdIssue.key,
       id: createdIssue.id,
     }
+  }
+
+  public async setAssignee(payload: { id: string; assignee: User }) {
+    const { id, assignee } = payload
+
+    await this.jira.assignIssue(id, assignee)
+  }
+
+  public async getJiraUsers() {
+    const response = await this.jira.getAllUsersDefault()
+
+    return response
   }
 
   public async getActiveProjects() {

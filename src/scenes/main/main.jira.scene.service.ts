@@ -542,11 +542,12 @@ export class MainJiraSceneService {
 
   @Hears(createNonCommandRegex(MAIN_CALLBACK_DATA))
   @AvailableChatTypes('supergroup')
-  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard, UserSupergroupTelegrafGuard)
+  @UseSafeGuards(ChatTelegrafGuard, UserTelegrafGuard, UserSupergroupTelegrafGuard, JiraTelegrafGuard)
   async taskCreation(
     @Ctx() ctx: SceneContext,
     @UserContext() userContext: TgInitUser,
     @ChatTelegrafContext() chatContext: ChatTelegrafContextType,
+    @JiraConfig() jiraConfig: JiraConfigType,
   ) {
     const paramsString = chatContext?.topic?.name?.split(':')[1]
     const params = paramsString?.split('&')
@@ -573,17 +574,52 @@ export class MainJiraSceneService {
 
     const description = ctx?.text
 
-    const { createdLink } = await this.jiraService.createTask({
-      key: projectKey,
-      summary: `[JiraBot] ${summary}`,
-      issueType,
-      description: `${description}\nCreated by bot from: https://t.me/c/${chatContext?.chat?.id?.toString()?.replace('-100', '')}/${chatContext?.threadMessageId}/${ctx?.message?.message_id}\nCaller user: @${userContext.username} (${userContext.firstName} ${userContext.lastName})`,
-    })
+    const usernames = description?.match(/@[a-zA-Z0-9_]+/g)
+    const uniqUserNames = new Set(usernames)
+    const userNames = Array.from(uniqUserNames).map((name) => name.replace('@', ''))
+    const userData = jiraConfig?.relationNames?.map((name) => name.toLowerCase().trim())
+    const usersData = await this.jiraService.getJiraUsers()
+    const users = usersData?.filter((user) => user.active)
 
-    await ctx.reply(`Успешно добавлена в Jira: ${createdLink}`, {
-      reply_parameters: {
-        message_id: ctx?.message?.message_id,
-      },
-    })
+    const ownerUserData = users?.find((user) => userData?.includes(user.displayName?.toLowerCase().trim()))
+
+    const assegneeUserName = this.customConfigService.relationUserNameOrIdWithJira
+      .filter((values) => {
+        if (values.nickNameOrId.toLowerCase().trim() === userNames?.[0]?.toLowerCase().trim()) {
+          return true
+        }
+
+        return false
+      })
+      .map((value) => value.relationValues?.map((name) => name.toLowerCase().trim()))
+      .flatMap((value) => users?.find((user) => value?.includes(user.displayName?.toLowerCase().trim())))
+
+    const assegneeUser = assegneeUserName?.[0] || ownerUserData
+
+    await this.jiraService
+      .createTask({
+        key: projectKey,
+        summary: `[JiraBot] ${summary}`,
+        issueType,
+        fields: {
+          assignee: assegneeUser,
+          reporter: ownerUserData,
+        },
+        description: `${description}\nCreated by bot from: https://t.me/c/${chatContext?.chat?.id?.toString()?.replace('-100', '')}/${chatContext?.threadMessageId}/${ctx?.message?.message_id}\nCaller user: @${userContext.username} (${userContext.firstName} ${userContext.lastName})`,
+      })
+      .then(async ({ createdLink }) => {
+        await ctx.reply(`Успешно добавлена в Jira: ${createdLink}`, {
+          reply_parameters: {
+            message_id: ctx?.message?.message_id,
+          },
+        })
+      })
+      .catch(async (err) => {
+        await ctx.reply(`Ошибка при создании задачи: ${err?.message}`, {
+          reply_parameters: {
+            message_id: ctx?.message?.message_id,
+          },
+        })
+      })
   }
 }

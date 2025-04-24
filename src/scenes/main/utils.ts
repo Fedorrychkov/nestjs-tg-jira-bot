@@ -3,5 +3,5 @@ export const createNonCommandRegex = (commands: Record<string, string>): RegExp 
     .map((cmd) => cmd.replace('/', '\\/'))
     .join('|')
 
-  return new RegExp(`^(?!(?:${excludeCommands})$).*$`)
+  return new RegExp(`^(?!(?:${excludeCommands})$).*$`, 'ms')
 }
