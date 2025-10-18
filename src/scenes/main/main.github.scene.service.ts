@@ -45,7 +45,7 @@ export class MainGithubSceneService {
         }),
       ).then((results) => results.map((result) => (result.status === 'fulfilled' ? result.value : null)))
 
-      if (!response?.length) {
+      if (!response?.length || response.every((repo) => !repo)) {
         await ctx.reply('Нет ни одного доступного проекта, пожалуйста, обратитесь к администратору')
       }
 
