@@ -80,4 +80,3 @@ ____
 - ```pnpm run start:dev``` - for hot reload application running
 - ```firebase init``` - for firebase-tools creation settings for your firebase project
 - ```firebase deploy --only firestore:indexes``` - for firestore indexes deployment by firestore.indexes.json file 
-
