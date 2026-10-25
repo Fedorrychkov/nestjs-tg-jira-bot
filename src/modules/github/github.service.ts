@@ -65,20 +65,6 @@ export class GithubService {
       }
 
       await this.octokit.rest.actions.createWorkflowDispatch(payload)
-
-      const {
-        data: { workflow_runs: runnedWorkflows },
-      } = await this.octokit.rest.actions.listWorkflowRuns({
-        owner: params.owner,
-        repo: params.repoName,
-        workflow_id: params.workflowId,
-        branch: params.branch,
-        per_page: 1,
-      })
-
-      runnedWorkflows
-
-      return runnedWorkflows
     } catch (error) {
       this.logger.error('Error triggering workflow:', error)
       throw error

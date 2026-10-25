@@ -14,6 +14,7 @@ import { Context } from 'telegraf'
 import { SceneContext } from 'telegraf/typings/scenes'
 
 import { botWelcomeCommandsText } from './constants'
+import { parseTopicSettings } from './utils'
 
 @Update()
 @Injectable()
@@ -32,7 +33,7 @@ export class MainSceneService {
   )
   async startCommand(@Ctx() ctx: SceneContext, @ChatTelegrafContext() chatContext: ChatTelegrafContextType) {
     const projects = await this.jiraService.getProjects()
-    const projectKey = chatContext.topic?.name?.split('=')?.[1]
+    const { key: projectKey } = parseTopicSettings(chatContext.topic?.name)
     const project = projects?.find((project) => project.key === projectKey)
 
     if (project) {
@@ -58,7 +59,7 @@ export class MainSceneService {
     UserSupergroupTelegrafGuard,
     RemoveSupergroupMessagesTelegrafGuard,
   )
-  async helpCommand(ctx: Context) {
+  async helpCommand(@Ctx() ctx: Context) {
     await ctx.reply(botWelcomeCommandsText)
   }
 }

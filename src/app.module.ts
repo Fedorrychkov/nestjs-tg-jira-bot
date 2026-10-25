@@ -5,6 +5,8 @@ import * as LocalSession from 'telegraf-session-local'
 
 import { AppController } from './app.controller'
 import { getEnvFile } from './env'
+import { AdminModule } from './modules/admin/admin.module'
+import { AdminService } from './modules/admin/admin.service'
 import { GithubModule } from './modules/github'
 import { JiraModule } from './modules/jira'
 import { MainSceneModule } from './scenes'
@@ -20,12 +22,12 @@ const session = new LocalSession()
       envFilePath: getEnvFile(),
     }),
     TelegrafModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
+      imports: [ConfigModule, AdminModule],
+      useFactory: (configService: ConfigService, admin: AdminService) => ({
         token: configService.get<string>('TELEGRAM_BOT_KEY'),
-        middlewares: [session.middleware()],
+        middlewares: [admin.middleware, session.middleware()],
       }),
-      inject: [ConfigService],
+      inject: [ConfigService, AdminService],
     }),
     MainSceneModule,
   ],
