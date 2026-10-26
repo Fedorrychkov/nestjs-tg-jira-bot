@@ -60,3 +60,7 @@ service-account*.json
 
 # tg library local cache file
 sessions.json
+
+# Private runtime team configuration
+/data/
+/uploads/

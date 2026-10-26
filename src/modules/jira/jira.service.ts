@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { Axios } from 'axios'
-import { exec } from 'child_process'
+import { execFile } from 'child_process'
 import { AgileClient } from 'jira.js'
 import NodeJsVersion3Client, { Version3Client } from 'jira-rest-sdk'
 import { User } from 'jira-rest-sdk/dist/v3/data-contracts'
@@ -130,9 +130,20 @@ export class JiraService {
   }
 
   public async getIssueWorklogs(issueId: string) {
-    const response = await this.api.get(`/rest/api/2/issue/${issueId}/worklog`)
+    const worklogs = []
+    let page
+    do {
+      const response = await this.api.get(`/rest/api/2/issue/${issueId}/worklog`, {
+        params: { startAt: worklogs.length, maxResults: 100 },
+      })
+      page = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
 
-    return response.data
+      if (!Array.isArray(page.worklogs) || (!page.worklogs.length && worklogs.length < page.total))
+        throw new Error('Incomplete Jira worklogs response')
+      worklogs.push(...page.worklogs)
+    } while (worklogs.length < page.total)
+
+    return { ...page, worklogs }
   }
 
   public async getSprint(sprintId: number) {
@@ -158,18 +169,35 @@ export class JiraService {
   }
 
   public async attachFile(key: string, filePath: string) {
-    return new Promise((resolve) => {
-      // Solution by community: https://community.atlassian.com/t5/Jira-questions/Getting-415-403-500-when-attaching-file-to-the-issue/qaq-p/2453618
-      const curlCommand = `curl --location --request POST "${this.baseURL}/rest/api/3/issue/${key}/attachments" -u "${this.email}:${this.apiToken}" -H "X-Atlassian-Token: no-check" --form "file=@${filePath}"`
+    return new Promise((resolve, reject) => {
+      execFile(
+        'curl',
+        [
+          '--fail',
+          '--silent',
+          '--show-error',
+          '--location',
+          '--request',
+          'POST',
+          `${this.baseURL}/rest/api/3/issue/${key}/attachments`,
+          '-u',
+          `${this.email}:${this.apiToken}`,
+          '-H',
+          'X-Atlassian-Token: no-check',
+          '--form',
+          `file=@${filePath}`,
+        ],
+        (error, _, stderr) => {
+          if (error) {
+            console.error(`Error: ${stderr}`)
+            reject(new Error(`Failed to add attachment to JIRA issue. ${stderr}`))
 
-      exec(curlCommand, (error, _, stderr) => {
-        if (error) {
-          console.error(`Error: ${stderr}`)
-          throw new Error(`Failed to add attachment to JIRA issue. ${stderr}`)
-        }
+            return
+          }
 
-        resolve(resolve)
-      })
+          resolve(undefined)
+        },
+      )
     })
   }
 

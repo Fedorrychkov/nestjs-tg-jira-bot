@@ -2,65 +2,84 @@ name: Production Deploy
 
 on:
   push:
-    branches:
-      - main
-  # Manual run: Actions → Production Deploy → Run workflow (branch can be selected in UI)
+    branches: [main]
   workflow_dispatch:
 
-permissions: write-all
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
 
 jobs:
-  # action instruction https://dev.to/kenessajr/deploy-a-react-app-to-digitalocean-using-github-actions-and-docker-4pln
   api:
+    if: >-
+      github.repository == 'Fedorrychkov/nestjs-tg-jira-bot' &&
+      github.actor_id == '16087030' &&
+      github.triggering_actor == 'Fedorrychkov' &&
+      github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    env:
-      CI: true
     steps:
-      - name: ⬇️ Checkout repo
-        uses: actions/checkout@v2
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: ⎔ Setup node
-        uses: actions/setup-node@v2
-        with:
-          node-version: 20
-
-      - name: 📥 Install dependencies
-        run: |
-          npm install --legacy-peer-deps
-
-      - name: Create env
-        run: |
-          echo '${{ secrets.PRIVATE_ENV }}' >> .env
-
-      - name: 🚀 Build project
-        run: npm run build:prod
-
-      - name: 🚀 Publish Api to Github Packages Registry
-        uses: elgohr/Publish-Docker-Github-Action@master
-        with:
-          name: fedorrychkov/nestjs-tg-jira-bot/tg-bot-prod
-          registry: docker.pkg.github.com
-          username: ${{ vars.GH_USERNAME }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-          dockerfile: Dockerfile-prod.api
-          tags: latest
-
-      - name: 🚀 Pull packages in DigitalOcean server
-        uses: appleboy/ssh-action@master
+      - name: Prepare runtime environment
+        id: runtime
         env:
-            GH_USERNAME: ${{ vars.GH_USERNAME }}
-            GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_ENV: ${{ secrets.PRIVATE_ENV }}
+          ADMIN_ID: ${{ vars.ADMIN_TELEGRAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import base64, os, re
+          from pathlib import Path
+          admin_id = os.environ['ADMIN_ID'].strip()
+          if not re.fullmatch(r'[1-9]\d{0,15}', admin_id):
+              raise SystemExit('Set the ADMIN_TELEGRAM_ID repository variable to your numeric Telegram user ID')
+          payload = os.environ['BOT_ENV']
+          if not payload.strip():
+              raise SystemExit('PRIVATE_ENV secret is empty')
+          payload += '\nADMIN_TELEGRAM_ID=' + admin_id + '\n'
+          encoded = base64.b64encode(payload.encode()).decode()
+          print('::add-mask::' + encoded)
+          with Path(os.environ['GITHUB_OUTPUT']).open('a') as output:
+              output.write('encoded=' + encoded + '\n')
+          PY
+
+      - name: Build and publish image
+        env:
+          REGISTRY_USER: ${{ vars.GH_USERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          printf '%s' "$REGISTRY_TOKEN" | docker login docker.pkg.github.com -u "$REGISTRY_USER" --password-stdin
+          docker build -f Dockerfile-prod.api -t docker.pkg.github.com/fedorrychkov/nestjs-tg-jira-bot/tg-bot-prod:latest .
+          docker push docker.pkg.github.com/fedorrychkov/nestjs-tg-jira-bot/tg-bot-prod:latest
+
+      - name: Deploy with persistent team configuration
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          GH_USERNAME: ${{ vars.GH_USERNAME }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BOT_ENV_BASE64: ${{ steps.runtime.outputs.encoded }}
         with:
           host: ${{ secrets.PROD_API_HOST }}
           username: ${{ secrets.PROD_API_USERNAME }}
           password: ${{ secrets.PROD_API_PASSWORD }}
           port: 22
-          envs: GH_USERNAME, GITHUB_TOKEN
+          envs: GH_USERNAME,REGISTRY_TOKEN,BOT_ENV_BASE64
           script: |
-            docker stop nestjs-container
-            docker system prune -a -f
-            docker network create mynetwork
-            docker login docker.pkg.github.com -u $GH_USERNAME -p $GITHUB_TOKEN
+            set -eu
+            bot_dir="$HOME/nestjs-tg-jira-bot"
+            umask 077
+            mkdir -p "$bot_dir/data"
+            printf '%s' "$BOT_ENV_BASE64" | base64 -d > "$bot_dir/bot.env.tmp"
+            mv "$bot_dir/bot.env.tmp" "$bot_dir/bot.env"
+            printf '%s' "$REGISTRY_TOKEN" | docker login docker.pkg.github.com -u "$GH_USERNAME" --password-stdin
             docker pull docker.pkg.github.com/fedorrychkov/nestjs-tg-jira-bot/tg-bot-prod:latest
-            docker run --restart=on-failure -dit --name nestjs-container -p 80:8080 --network mynetwork docker.pkg.github.com/fedorrychkov/nestjs-tg-jira-bot/tg-bot-prod:latest
-
+            docker network inspect mynetwork >/dev/null 2>&1 || docker network create mynetwork
+            docker rm -f nestjs-container >/dev/null 2>&1 || true
+            docker run --restart=unless-stopped -d --name nestjs-container -p 80:8080 --network mynetwork \
+              --mount "type=bind,src=$bot_dir/data,dst=/usr/src/app/data" \
+              --mount "type=bind,src=$bot_dir/bot.env,dst=/usr/src/app/.env,readonly" \
+              docker.pkg.github.com/fedorrychkov/nestjs-tg-jira-bot/tg-bot-prod:latest

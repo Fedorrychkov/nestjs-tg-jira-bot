@@ -2,8 +2,6 @@ export type JiraConfigType = {
   availabilityListKeys?: string[]
   isSuperAdmin?: boolean
   relationNames?: string[]
-  selfSalaryRelationByTgAndProject?: SelfSalaryRelationByTgAndProject[]
-  allSalaryRelationByTgAndProject?: SalaryRelationByTgAndProject
 }
 
 export type SelfSalaryRelationByTgAndProject = {

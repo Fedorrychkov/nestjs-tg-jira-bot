@@ -30,63 +30,7 @@ export class JiraTelegrafGuard extends SafeGuardInterceptor {
       const request = context.switchToHttp().getRequest()
 
       const from = update?.from || update?.message?.from
-      const username = from?.username
-
-      const superAdminAvailabilityList = this.customConfigService.superAdminList
-        .map((nickname) => nickname.toLowerCase().trim())
-        .filter((usernameOrId) => {
-          if (usernameOrId.toLowerCase().trim() === username?.toLowerCase().trim()) {
-            return true
-          }
-
-          if (usernameOrId.toLowerCase().trim() === `${from?.id}`.toLowerCase().trim()) {
-            return true
-          }
-
-          return false
-        })
-
-      const jiraAvailabilityListKeys = this.customConfigService.availabilityUsersByKeys.filter((values) => {
-        if (values.nicknamesOrIds.includes(username?.toLowerCase().trim())) {
-          return true
-        }
-
-        if (values.nicknamesOrIds.includes(`${from?.id}`.toLowerCase().trim())) {
-          return true
-        }
-
-        return false
-      })
-
-      const isSuperAdmin = superAdminAvailabilityList.length > 0
-
-      const relationUserNameOrIdWithJira = this.customConfigService.relationUserNameOrIdWithJira
-        .filter((values) => {
-          if (values.nickNameOrId.toLowerCase().trim() === username?.toLowerCase().trim()) {
-            return true
-          }
-
-          if (values.nickNameOrId.toLowerCase().trim() === `${from?.id}`.toLowerCase().trim()) {
-            return true
-          }
-
-          return false
-        })
-        .map((value) => value.relationValues)
-        .flatMap((value) => value)
-
-      const salaryRelationByTgAndProjectByUsername =
-        this.customConfigService.salaryRelationByTgAndProject?.[username?.toLowerCase().trim()]
-      const salaryRelationByTgAndProjectById =
-        this.customConfigService.salaryRelationByTgAndProject?.[`${from?.id}`?.toLowerCase().trim()]
-
-      const jiraConfig: JiraConfigType = {
-        isSuperAdmin,
-        availabilityListKeys: jiraAvailabilityListKeys.map((value) => value.key),
-        relationNames: relationUserNameOrIdWithJira || [],
-        selfSalaryRelationByTgAndProject: salaryRelationByTgAndProjectByUsername || salaryRelationByTgAndProjectById,
-        allSalaryRelationByTgAndProject: this.customConfigService.salaryRelationByTgAndProject,
-      }
+      const jiraConfig: JiraConfigType = this.customConfigService.jiraConfigFor(from)
 
       request.jiraConfig = jiraConfig
 

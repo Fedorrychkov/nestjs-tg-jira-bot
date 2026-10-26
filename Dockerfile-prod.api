@@ -1,8 +1,18 @@
-# Stage 1: Build the application
-FROM node:18-alpine
+FROM node:20-alpine AS build
 WORKDIR /usr/src/app
-COPY package*.json ./
-RUN npm install --legacy-peer-deps --ignore-scripts
-COPY . ./
-RUN npm run build:prod
-CMD ["npm", "run", "start:prod"]
+RUN npm install -g pnpm@10.34.7 --ignore-scripts
+COPY package.json pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile --ignore-scripts
+COPY tsconfig*.json nest-cli.json ./
+COPY src ./src
+RUN pnpm run build:prod && pnpm prune --prod --ignore-scripts
+
+FROM node:20-alpine
+WORKDIR /usr/src/app
+RUN apk add --no-cache curl
+COPY --from=build /usr/src/app/package.json ./package.json
+COPY --from=build /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/dist ./dist
+ENV NODE_ENV=production
+ENV BOT_CONFIG_PATH=/usr/src/app/data/team-config.json
+CMD ["node", "dist/main"]

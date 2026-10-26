@@ -1,120 +1,96 @@
-import { Inject, Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { GithubWorkflowParams, GithubWorkflowSettings, SalaryRelationByTgAndProject } from 'src/types'
+import { existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'fs'
+import { dirname, resolve } from 'path'
+
+import { JiraConfigType } from '../../types'
+import { configId, migrateTeamConfig } from './team-config.migration'
+import { Employee, normalizeIdentity, TeamConfig, TelegramUser } from './team-config.types'
+import { validateTeamConfig } from './team-config.validation'
 
 @Injectable()
 export class CustomConfigService {
-  private logger = new Logger(CustomConfigService.name)
-  public miniAppUrl: string
-  public apiUrl: string
-  public tgToken: string
-  public superAdminList: string[]
-  public availabilityUsersByKeys: { key: string; nicknamesOrIds: string[] }[]
-  public relationUserNameOrIdWithJira: { nickNameOrId: string; relationValues: string[] }[]
-  public salaryRelationByTgAndProject: SalaryRelationByTgAndProject
-  public githubWorkflowSettings: GithubWorkflowSettings
+  private readonly logger = new Logger(CustomConfigService.name)
+  private data: TeamConfig
+  private readonly filePath: string
+  readonly adminTelegramId: string
 
-  constructor(
-    @Inject(ConfigService)
-    private configService: ConfigService,
-  ) {
-    this.miniAppUrl = this.configService.get<string>('MINI_APP_URL')
-    this.apiUrl = this.configService.get<string>('API_URL')
-    this.tgToken = this.configService.get<string>('TELEGRAM_BOT_KEY')
-    const superAdminList = this.configService.get<string>('SUPERADMIN_LIST')?.split(',') || []
-    this.superAdminList = superAdminList.map((nickname) => nickname.trim())
-    const availabilityUsersByKeys = this.configService.get<string>('AVAILABILITY_BY_KEYS')?.split(',') || []
-    this.availabilityUsersByKeys = availabilityUsersByKeys.map((values) => {
-      const [key, ...nicknamesOrIds] = values.split(':')
+  constructor(configService: ConfigService) {
+    this.adminTelegramId = configService.get<string>('ADMIN_TELEGRAM_ID')?.trim() || ''
 
-      return { key, nicknamesOrIds: nicknamesOrIds.map((nickname) => nickname.trim()) }
-    })
-    const relationUserNameOrIdWithJira = this.configService.get<string>('RELATION_BY_NAME_OR_EMAIL')?.split(',') || []
-    this.relationUserNameOrIdWithJira = relationUserNameOrIdWithJira.map((values) => {
-      const [nickNameOrId, ...relationValues] = values.split(':')
+    if (this.adminTelegramId && !/^[1-9]\d{0,15}$/.test(this.adminTelegramId))
+      throw new Error('ADMIN_TELEGRAM_ID должен быть положительным числовым Telegram ID')
 
-      return { nickNameOrId, relationValues: relationValues.map((value) => value.trim()) }
-    })
+    if (!this.adminTelegramId) this.logger.warn('ADMIN_TELEGRAM_ID не задан: /admin отключён')
+    this.filePath = resolve(configService.get<string>('BOT_CONFIG_PATH') || 'data/team-config.json')
 
-    const salaryRelationByTgAndProject =
-      this.configService.get<string>('SALARY_RELATION_BY_TG_AND_PROJECT')?.split('|') || []
+    if (existsSync(this.filePath)) {
+      const data: unknown = JSON.parse(readFileSync(this.filePath, 'utf8'))
+      validateTeamConfig(data)
+      this.data = data
+    } else {
+      const data = migrateTeamConfig(configService)
+      validateTeamConfig(data)
+      this.persist(data)
+      this.data = data
+      this.logger.log('Конфигурация команды импортирована из env; дальнейшие изменения — через /admin')
+    }
+  }
 
-    this.salaryRelationByTgAndProject = salaryRelationByTgAndProject
-      .map((values) => {
-        const [nickNameOrId, relationValues] = values.split(':')
-        const salaryParams = relationValues
-          .replace(/{|}/g, '')
-          .split(',')
-          .map((values) => {
-            const [key, value] = values.split('=')
+  get team(): TeamConfig {
+    return structuredClone(this.data)
+  }
 
-            return { key, value }
-          })
+  // shortcut: one bot process owns the file; use a database before adding multiple writers.
+  update(change: (config: TeamConfig) => void) {
+    const next = this.team
+    change(next)
+    validateTeamConfig(next)
+    this.persist(next)
+    this.data = next
+  }
 
-        return {
-          nickNameOrId,
-          // Собираем параметры по ключу и значению
-          salaryParams: salaryParams.reduce((acc, curr) => {
-            acc[curr.key] = curr.value
+  private persist(data: TeamConfig) {
+    mkdirSync(dirname(this.filePath), { recursive: true, mode: 0o700 })
+    const temp = `${this.filePath}.${configId()}.tmp`
 
-            return acc
-          }, {}),
-        }
-      })
-      .reduce((acc, curr) => {
-        const values = acc[curr.nickNameOrId] || []
-        acc[curr.nickNameOrId] = [...values, curr.salaryParams]
+    try {
+      writeFileSync(temp, JSON.stringify(data, null, 2) + '\n', { mode: 0o600, flag: 'wx' })
+      renameSync(temp, this.filePath)
+    } finally {
+      if (existsSync(temp)) unlinkSync(temp)
+    }
+  }
 
-        return acc
-      }, {})
+  isOwner(user?: TelegramUser) {
+    return !!this.adminTelegramId && String(user?.id) === this.adminTelegramId
+  }
 
-    const githubWorkflowSettings = this.configService.get<string>('GITHUB_WORKFLOW_SETTINGS')?.split('|') || []
+  employeeFor(user?: TelegramUser): Employee | undefined {
+    if (!user) return undefined
+    // An explicit numeric identity takes precedence over a username entry.
+    const employee =
+      this.data.employees.find((item) => item.telegram === String(user.id)) ||
+      this.data.employees.find((item) => user.username && item.telegram === normalizeIdentity(user.username))
 
-    this.githubWorkflowSettings = githubWorkflowSettings
-      .map((workflowValues) => {
-        const [repoName, values] = workflowValues.split(':')
+    return employee && structuredClone(employee)
+  }
 
-        const params = values
-          .replace(/{|}/g, '')
-          .split(',')
-          .map((values) => {
-            const [key, value] = values.split('=')
+  jiraConfigFor(user: TelegramUser): JiraConfigType {
+    const employee = this.employeeFor(user)
+    const active = employee?.active
 
-            return { key, value }
-          })
+    return {
+      isSuperAdmin: this.isOwner(user),
+      availabilityListKeys: active ? employee.projects : [],
+      relationNames: active ? employee.jira : [],
+    }
+  }
 
-        const options = params.reduce((acc, curr) => {
-          acc[curr.key] = curr.value
+  workflowsFor(user: TelegramUser) {
+    if (this.isOwner(user)) return this.team.workflows
+    const employee = this.employeeFor(user)
 
-          return acc
-        }, {} as GithubWorkflowParams)
-
-        const { branch, environment, workflowId, appType, owner } = options
-
-        return { repoName, branch, environment, workflowId, appType, owner }
-      })
-      .reduce((acc, curr) => {
-        const { repoName, environment, appType } = curr
-        const valueByRepoName = acc[repoName] || {}
-        const envKey = `${environment}-${appType}`
-        const optionsByEnvironment = valueByRepoName[envKey] || {}
-
-        const payload = {
-          [envKey]: {
-            ...optionsByEnvironment,
-            ...curr,
-          },
-        }
-
-        const newAcc = {
-          ...acc,
-          [repoName]: {
-            ...valueByRepoName,
-            ...payload,
-          },
-        }
-
-        return newAcc
-      }, {} as GithubWorkflowSettings)
+    return employee?.active ? this.team.workflows.filter((workflow) => employee.workflows.includes(workflow.id)) : []
   }
 }
